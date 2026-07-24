@@ -85,7 +85,10 @@ void main(List<String> args) {
     );
   }
 
-  final label = dryRun ? 'Checking' : 'Sorting';
+  // Both dry-run and exit-if-changed are read-only: they never write files.
+  final readOnly = dryRun || exitOnChange;
+
+  final label = readOnly ? 'Checking' : 'Sorting';
   stdout.write('┏━━ $label ${dartFiles.length} dart files');
   if (dryRun) stdout.write(' (dry run — no files will be written)');
 
@@ -97,11 +100,14 @@ void main(List<String> args) {
     final file = dartFiles[filePath];
     if (file == null) continue;
 
+    // Pass exitIfChanged: false so the whole project is checked in one pass —
+    // every unsorted file is reported instead of aborting on the first one
+    // (issue import_sorter#87).
     final result = sort.sortImports(
       file.readAsLinesSync(),
       packageName,
       emojis,
-      exitOnChange,
+      false,
       noComments,
       filePath: filePath.replaceFirst(currentPath, ''),
       noBlankLines: noBlankLines,
@@ -109,7 +115,7 @@ void main(List<String> args) {
     );
     if (!result.updated) continue;
 
-    if (!dryRun) file.writeAsStringSync(result.sortedFile);
+    if (!readOnly) file.writeAsStringSync(result.sortedFile);
     sortedFiles.add(filePath);
   }
 
@@ -117,7 +123,9 @@ void main(List<String> args) {
 
   if (sortedFiles.length > 1) stdout.write('\n');
 
-  final verb = dryRun ? 'Would sort' : 'Sorted imports for';
+  final verb = exitOnChange
+      ? 'Needs sorting:'
+      : (dryRun ? 'Would sort' : 'Sorted imports for');
   for (var i = 0; i < sortedFiles.length; i++) {
     final file = dartFiles[sortedFiles[i]]!;
     final relativePath = file.path.replaceFirst(currentPath, '');
@@ -130,23 +138,30 @@ void main(List<String> args) {
   if (sortedFiles.isEmpty) stdout.write('\n');
 
   final elapsed = (stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2);
-  final action = dryRun ? 'Would sort' : 'Sorted';
+  final action = exitOnChange ? 'Checked' : (dryRun ? 'Would sort' : 'Sorted');
   stdout.writeln(
       '┗━━ $success $action ${sortedFiles.length} files in ${elapsed}s');
 
   // Optionally sort pubspec.yaml dependency sections (issue import_sorter#89).
+  var pubspecUnsorted = false;
   if (sortPubspec) {
     final original = pubspecYamlFile.readAsStringSync();
     final sorted = pubspec_sort.sortPubspec(original);
     if (sorted != original) {
-      if (exitOnChange) {
-        stdout.writeln(
-            '\n┗━━🚨 pubspec.yaml dependencies are not sorted alphabetically.');
-        exit(1);
-      }
-      if (!dryRun) pubspecYamlFile.writeAsStringSync(sorted);
-      final pubspecVerb = dryRun ? 'Would sort' : 'Sorted';
+      pubspecUnsorted = true;
+      if (!readOnly) pubspecYamlFile.writeAsStringSync(sorted);
+      final pubspecVerb =
+          exitOnChange ? 'Needs sorting:' : (dryRun ? 'Would sort' : 'Sorted');
       stdout.writeln('$success $pubspecVerb pubspec.yaml dependencies');
     }
+  }
+
+  // In CI mode, fail after reporting everything that needs attention.
+  if (exitOnChange && (sortedFiles.isNotEmpty || pubspecUnsorted)) {
+    final count = sortedFiles.length + (pubspecUnsorted ? 1 : 0);
+    stderr.writeln(
+      '\n🚨 $count file(s) are not sorted. Run `dart run tidy_imports` to fix.',
+    );
+    exit(1);
   }
 }

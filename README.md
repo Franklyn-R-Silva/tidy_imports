@@ -201,7 +201,10 @@ dart run tidy_imports --sort-pubspec
   run: dart run tidy_imports --exit-if-changed
 ```
 
-The command exits with code `1` if any file has unsorted imports, causing the CI job to fail. Use `--dry-run` locally to preview what would change without modifying files.
+`--exit-if-changed` checks the **whole project in one pass** and lists **every**
+file that needs sorting before exiting with code `1` — so a single CI run shows
+you everything to fix, not just the first offender. It never writes files. Use
+`--dry-run` locally for the same read-only preview with a friendlier summary.
 
 ### pre-commit hook
 
@@ -239,6 +242,8 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
 | Standalone config file | Not available | `tidy_imports.yaml` |
 | Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
+| `--exit-if-changed` in CI | Aborts on first unsorted file | Reports every unsorted file |
+| pre-commit hook | `language: script` (broken) | `language: system` (works) |
 | Dart SDK | `>=2.12.0` | `>=3.0.0` |
 | Conditional imports | Misclassified | Handled correctly |
 | Versioning | Manual | Automated via Release Please |
