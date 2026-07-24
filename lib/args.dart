@@ -36,6 +36,8 @@ void outputHelp() {
   stdout.writeln('                         Useful for CI pipelines.');
   stdout
       .writeln('      --no-comments      Omit group comments before imports.');
+  stdout.writeln(
+      '      --no-blank-lines   Omit blank lines between import groups.');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');

@@ -12,6 +12,7 @@ ImportSortData sortImports(
   bool exitIfChanged,
   bool noComments, {
   String? filePath,
+  bool noBlankLines = false,
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -127,31 +128,33 @@ ImportSortData sortImports(
   if (beforeImportLines.isNotEmpty) {
     sortedLines.add('');
   }
+  void addSeparator(bool hasPrevious) {
+    if (!noBlankLines && hasPrevious) sortedLines.add('');
+  }
+
   if (dartImports.isNotEmpty) {
     if (!noComments) sortedLines.add(dartImportComment(emojis));
     dartImports.sort();
     sortedLines.addAll(dartImports);
   }
   if (flutterImports.isNotEmpty) {
-    if (dartImports.isNotEmpty) sortedLines.add('');
+    addSeparator(dartImports.isNotEmpty);
     if (!noComments) sortedLines.add(flutterImportComment(emojis));
     flutterImports.sort();
     sortedLines.addAll(flutterImports);
   }
   if (packageImports.isNotEmpty) {
-    if (dartImports.isNotEmpty || flutterImports.isNotEmpty) {
-      sortedLines.add('');
-    }
+    addSeparator(dartImports.isNotEmpty || flutterImports.isNotEmpty);
     if (!noComments) sortedLines.add(packageImportComment(emojis));
     packageImports.sort();
     sortedLines.addAll(packageImports);
   }
   if (projectImports.isNotEmpty || projectRelativeImports.isNotEmpty) {
-    if (dartImports.isNotEmpty ||
-        flutterImports.isNotEmpty ||
-        packageImports.isNotEmpty) {
-      sortedLines.add('');
-    }
+    addSeparator(
+      dartImports.isNotEmpty ||
+          flutterImports.isNotEmpty ||
+          packageImports.isNotEmpty,
+    );
     if (!noComments) sortedLines.add(projectImportComment(emojis));
     projectImports.sort();
     projectRelativeImports.sort();

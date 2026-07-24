@@ -19,6 +19,7 @@ void main(List<String> args) {
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
     ..addFlag('no-comments', negatable: false)
+    ..addFlag('no-blank-lines', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
   final argResults = parser.parse(args);
@@ -43,17 +44,19 @@ void main(List<String> args) {
   final pubspecYaml = loadYaml(pubspecYamlFile.readAsStringSync());
   final packageName = pubspecYaml['name'] as String;
 
+  // pubspec.lock may be absent in pub workspaces / monorepos where a
+  // root-level lock file is used instead. Fall back to empty dependencies
+  // (flutter plugin registrant skipping is disabled) rather than crashing.
   final pubspecLockFile = File('$currentPath/pubspec.lock');
-  if (!pubspecLockFile.existsSync()) {
-    stderr.writeln('Error: pubspec.lock not found. Run `dart pub get` first.');
-    exit(1);
+  final dependencies = <dynamic>[];
+  if (pubspecLockFile.existsSync()) {
+    final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
+    dependencies.addAll((pubspecLock['packages'] as YamlMap).keys);
   }
-
-  final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
-  final dependencies = (pubspecLock['packages'] as YamlMap).keys.toList();
 
   var emojis = false;
   var noComments = false;
+  var noBlankLines = false;
   final ignoredFiles = <dynamic>[];
 
   if (argResults['ignore-config'] != true) {
@@ -63,6 +66,9 @@ void main(List<String> args) {
       if (config['comments'] != null) {
         noComments = !(config['comments'] as bool);
       }
+      if (config['blank_lines'] != null) {
+        noBlankLines = !(config['blank_lines'] as bool);
+      }
       if (config['ignored_files'] != null) {
         ignoredFiles.addAll(config['ignored_files'] as YamlList);
       }
@@ -71,6 +77,7 @@ void main(List<String> args) {
 
   if (!emojis) emojis = argResults['emojis'] == true;
   if (!noComments) noComments = argResults['no-comments'] == true;
+  if (!noBlankLines) noBlankLines = argResults['no-blank-lines'] == true;
   final exitOnChange = argResults['exit-if-changed'] == true;
   final dryRun = argResults['dry-run'] == true;
 
@@ -108,6 +115,7 @@ void main(List<String> args) {
       exitOnChange,
       noComments,
       filePath: filePath.replaceFirst(currentPath, ''),
+      noBlankLines: noBlankLines,
     );
     if (!result.updated) continue;
 
