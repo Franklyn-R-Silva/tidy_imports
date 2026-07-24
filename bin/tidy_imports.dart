@@ -1,4 +1,5 @@
 // Dart imports:
+import 'dart:convert';
 import 'dart:io';
 
 // Package imports:
@@ -103,11 +104,16 @@ void main(List<String> args) {
     final file = dartFiles[filePath];
     if (file == null) continue;
 
+    // Preserve the file's original line ending (CRLF on Windows) instead of
+    // silently rewriting to LF, which creates spurious diffs and git noise.
+    final rawContent = file.readAsStringSync();
+    final usesCrlf = rawContent.contains('\r\n');
+
     // Pass exitIfChanged: false so the whole project is checked in one pass —
     // every unsorted file is reported instead of aborting on the first one
     // (issue import_sorter#87).
     final result = sort.sortImports(
-      file.readAsLinesSync(),
+      const LineSplitter().convert(rawContent),
       packageName,
       emojis,
       false,
@@ -119,7 +125,10 @@ void main(List<String> args) {
     );
     if (!result.updated) continue;
 
-    if (!readOnly) file.writeAsStringSync(result.sortedFile);
+    final output = usesCrlf
+        ? result.sortedFile.replaceAll('\n', '\r\n')
+        : result.sortedFile;
+    if (!readOnly) file.writeAsStringSync(output);
     sortedFiles.add(filePath);
   }
 
