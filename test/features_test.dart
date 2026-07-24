@@ -76,6 +76,63 @@ void main() {}
     });
   });
 
+  group('group project imports by folder (#69)', () {
+    test('inserts a blank line between different project subfolders', () {
+      final lines = [
+        "import 'package:demo/aaa/foo.dart';",
+        "import 'package:demo/bbb/baz.dart';",
+        "import 'package:demo/aaa/bar.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        groupProjectByFolder: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/aaa/bar.dart';
+import 'package:demo/aaa/foo.dart';
+
+import 'package:demo/bbb/baz.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('re-running a folder-grouped file makes no change', () {
+      final sorted = '''
+// Project imports:
+import 'package:demo/aaa/bar.dart';
+import 'package:demo/aaa/foo.dart';
+
+import 'package:demo/bbb/baz.dart';
+
+void main() {}
+''';
+
+      final result = sortImports(
+        sorted.split('\n'),
+        'demo',
+        false,
+        false,
+        false,
+        groupProjectByFolder: true,
+      );
+
+      expect(result.updated, isFalse);
+    });
+  });
+
   group('no blank lines (#80)', () {
     test('omits separators between groups', () {
       final lines = [
@@ -180,6 +237,7 @@ dependencies:
       expect(config.noComments, isFalse);
       expect(config.noBlankLines, isFalse);
       expect(config.sortPubspec, isFalse);
+      expect(config.groupProjectByFolder, isFalse);
       expect(config.ignoredFiles, isEmpty);
       expect(config.customTiers, isEmpty);
     });

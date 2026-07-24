@@ -40,6 +40,8 @@ void outputHelp() {
       '      --no-blank-lines   Omit blank lines between import groups.');
   stdout
       .writeln('      --sort-pubspec     Also sort pubspec.yaml dependencies.');
+  stdout.writeln(
+      '      --group-by-folder  Separate project imports by subfolder.');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');

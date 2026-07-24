@@ -23,6 +23,7 @@ void main(List<String> args) {
     ..addFlag('no-comments', negatable: false)
     ..addFlag('no-blank-lines', negatable: false)
     ..addFlag('sort-pubspec', negatable: false)
+    ..addFlag('group-by-folder', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
   final argResults = parser.parse(args);
@@ -66,6 +67,8 @@ void main(List<String> args) {
   final noBlankLines =
       config.noBlankLines || argResults['no-blank-lines'] == true;
   final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
+  final groupByFolder =
+      config.groupProjectByFolder || argResults['group-by-folder'] == true;
   final customTiers = config.customTiers;
   final ignoredFiles = config.ignoredFiles;
   final exitOnChange = argResults['exit-if-changed'] == true;
@@ -112,6 +115,7 @@ void main(List<String> args) {
       filePath: filePath.replaceFirst(currentPath, ''),
       noBlankLines: noBlankLines,
       customTiers: customTiers,
+      groupProjectByFolder: groupByFolder,
     );
     if (!result.updated) continue;
 

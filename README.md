@@ -106,6 +106,7 @@ dart run tidy_imports --exit-if-changed
 | `--no-comments` | | Omit group comments entirely |
 | `--no-blank-lines` | | Omit blank lines between import groups |
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
+| `--group-by-folder` | | Separate project imports by subfolder |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -122,6 +123,7 @@ tidy_imports:
   comments: true         # Default: true  — add group comments
   blank_lines: true      # Default: true  — blank lines between groups
   sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
+  group_project_by_folder: false  # Default: false — split project imports by folder
   ignored_files:         # Regex patterns applied to relative file paths
     - \/lib\/generated\/  # ignore a whole folder
     - \.g\.dart$          # ignore generated files (build_runner)
@@ -192,6 +194,21 @@ to a dependency are preserved.
 dart run tidy_imports --sort-pubspec
 ```
 
+## Grouping project imports by folder
+
+Pass `--group-by-folder` (or set `group_project_by_folder: true`) to visually
+separate your project imports by their subfolder with a blank line whenever the
+folder changes — useful in large projects with many local files.
+
+```dart
+// Project imports:
+import 'package:myapp/data/user_repository.dart';
+import 'package:myapp/data/user_service.dart';
+
+import 'package:myapp/ui/home_page.dart';
+import 'package:myapp/ui/settings_page.dart';
+```
+
 ## CI Integration
 
 ### GitHub Actions
@@ -240,6 +257,7 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | `--no-blank-lines` | Not available | Available |
 | Custom import tiers | Not available | Available |
 | Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
+| Group project imports by folder | Not available | `--group-by-folder` |
 | Standalone config file | Not available | `tidy_imports.yaml` |
 | Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
 | `--exit-if-changed` in CI | Aborts on first unsorted file | Reports every unsorted file |

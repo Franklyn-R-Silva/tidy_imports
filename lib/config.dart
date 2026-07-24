@@ -27,6 +27,7 @@ class TidyConfig {
   final bool noComments;
   final bool noBlankLines;
   final bool sortPubspec;
+  final bool groupProjectByFolder;
   final List<String> ignoredFiles;
   final List<CustomTier> customTiers;
 
@@ -35,6 +36,7 @@ class TidyConfig {
     required this.noComments,
     required this.noBlankLines,
     required this.sortPubspec,
+    required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
   });
@@ -61,6 +63,7 @@ class TidyConfig {
         noComments: false,
         noBlankLines: false,
         sortPubspec: false,
+        groupProjectByFolder: false,
         ignoredFiles: [],
         customTiers: [],
       );
@@ -92,6 +95,7 @@ class TidyConfig {
           ? false
           : !(config['blank_lines'] as bool),
       sortPubspec: config['sort_pubspec'] as bool? ?? false,
+      groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
       ignoredFiles: ignored,
       customTiers: tiers,
     );

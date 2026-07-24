@@ -17,6 +17,7 @@ ImportSortData sortImports(
   String? filePath,
   bool noBlankLines = false,
   List<CustomTier> customTiers = const [],
+  bool groupProjectByFolder = false,
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -184,8 +185,18 @@ ImportSortData sortImports(
     if (!noComments) sortedLines.add(projectImportComment(emojis));
     projectImports.sort();
     projectRelativeImports.sort();
-    sortedLines.addAll(projectImports);
-    sortedLines.addAll(projectRelativeImports);
+    final allProject = [...projectImports, ...projectRelativeImports];
+    if (groupProjectByFolder && !noBlankLines) {
+      String? prevDir;
+      for (final line in allProject) {
+        final dir = _importDir(line);
+        if (prevDir != null && dir != prevDir) sortedLines.add('');
+        sortedLines.add(line);
+        prevDir = dir;
+      }
+    } else {
+      sortedLines.addAll(allProject);
+    }
   }
 
   sortedLines.add('');
@@ -222,6 +233,18 @@ ImportSortData sortImports(
 
 int _timesContained(String string, String looking) =>
     string.split(looking).length - 1;
+
+/// Extracts the directory portion of an import's URI (issue import_sorter#69).
+///
+/// `import 'package:app/aaa/bbb/foo.dart';` -> `package:app/aaa/bbb`.
+/// `import 'foo.dart';` -> `''` (no directory).
+String _importDir(String line) {
+  final match = RegExp('''['"]([^'"]+)['"]''').firstMatch(line);
+  if (match == null) return '';
+  final uri = match.group(1)!;
+  final slash = uri.lastIndexOf('/');
+  return slash < 0 ? '' : uri.substring(0, slash);
+}
 
 /// Returns the first custom tier whose pattern matches [line], or null.
 CustomTier? _matchTier(String line, List<CustomTier> tiers) {
