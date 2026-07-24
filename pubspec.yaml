@@ -2,7 +2,7 @@ name: tidy_imports
 description: >-
   Automatically organize your Dart imports. Sorts and groups dart, flutter,
   package, and project imports alphabetically. Spiritual successor to import_sorter.
-version: 1.0.0
+version: 1.1.0
 repository: https://github.com/Franklyn-R-Silva/tidy_imports
 homepage: https://github.com/Franklyn-R-Silva/tidy_imports
 topics:

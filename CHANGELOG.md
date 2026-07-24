@@ -32,6 +32,19 @@ New features and fixes addressing long-standing
 - `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue forms, and PR template
 - Automated versioning via Release Please
 
+## [1.1.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.0.0...v1.1.0) (2026-07-24)
+
+
+### Features
+
+* group project imports by subfolder (--group-by-folder) ([94880bd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/94880bd865d2f7b57c6e8f99abb57b8a7383ff31))
+* report all unsorted files in --exit-if-changed and fix pre-commit hooks ([48af73e](https://github.com/Franklyn-R-Silva/tidy_imports/commit/48af73e574bec0ae69eda658cc4152897d8e36d2))
+
+
+### Bug Fixes
+
+* preserve original line endings (CRLF) when rewriting files ([c3b7983](https://github.com/Franklyn-R-Silva/tidy_imports/commit/c3b7983e22d4e13501af60fa4954b05710bdc50a))
+
 ## 1.0.0
 
 Spiritual successor to [import_sorter](https://github.com/fluttercommunity/import_sorter).
