@@ -1,0 +1,13 @@
+- id: dart-import-sorter
+  name: Dart Import Sorter
+  description: Automatically organize Dart imports
+  language: script
+  entry: dart run tidy_imports
+  types: [dart]
+
+- id: flutter-import-sorter
+  name: Flutter Import Sorter
+  description: Automatically organize Dart imports in Flutter projects
+  language: script
+  entry: flutter pub run tidy_imports
+  types: [dart]
