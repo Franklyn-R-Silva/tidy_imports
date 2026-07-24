@@ -1,6 +1,14 @@
 // Dart imports:
 import 'dart:io';
 
+// Project imports:
+import 'package:tidy_imports/src/version.dart';
+
+void outputVersion() {
+  stdout.writeln('$packageName $packageVersion');
+  exit(0);
+}
+
 void outputHelp() {
   const title = r'''
  _   _     _          _
@@ -18,16 +26,20 @@ void outputHelp() {
   stdout
       .writeln('  -e, --emojis           Add emojis to import group comments.');
   stdout.writeln('  -h, --help             Show this help message.');
+  stdout.writeln('  -v, --version          Show version and exit.');
+  stdout.writeln(
+      '      --dry-run          Preview changes without writing files.');
   stdout.writeln(
       '      --ignore-config    Ignore configuration in pubspec.yaml.');
   stdout.writeln(
-      '      --exit-if-changed  Exit with error if any file is unsorted.');
+      '      --exit-if-changed  Exit with code 1 if any file is unsorted.');
   stdout.writeln('                         Useful for CI pipelines.');
   stdout
       .writeln('      --no-comments      Omit group comments before imports.');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');
+  stdout.writeln('  dart run tidy_imports --dry-run');
   stdout.writeln('  dart run tidy_imports lib/main.dart lib/app.dart');
   stdout.writeln('  dart run tidy_imports "lib/*"');
   exit(0);

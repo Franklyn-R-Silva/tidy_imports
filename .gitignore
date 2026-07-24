@@ -1,5 +1,6 @@
 # Dart
 .dart_tool/
+lib/src/build_info.dart
 .packages
 build/
 pubspec.lock
