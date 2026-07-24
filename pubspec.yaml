@@ -9,6 +9,9 @@ homepage: https://github.com/Franklyn-R-Silva/tidy_imports
 environment:
   sdk: ">=3.0.0 <4.0.0"
 
+executables:
+  tidy_imports:
+
 dependencies:
   args: ^2.5.0
   tint: ^2.0.1
