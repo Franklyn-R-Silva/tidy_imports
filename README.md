@@ -1,4 +1,12 @@
-# tidy_imports
+```txt
+
+████████╗██╗██████╗░██╗░░░██╗  ██╗███╗░░░███╗██████╗░░█████╗░██████╗░████████╗░██████╗
+╚══██╔══╝██║██╔══██╗╚██╗░██╔╝  ██║████╗░████║██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔════╝
+░░░██║░░░██║██║░░██║░╚████╔╝░  ██║██╔████╔██║██████╔╝██║░░██║██████╔╝░░░██║░░░╚█████╗░
+░░░██║░░░██║██║░░██║░░╚██╔╝░░  ██║██║╚██╔╝██║██╔═══╝░██║░░██║██╔══██╗░░░██║░░░░╚═══██╗
+░░░██║░░░██║██████╔╝░░░██║░░░  ██║██║░╚═╝░██║██║░░░░░╚█████╔╝██║░░██║░░░██║░░░██████╔╝
+░░░╚═╝░░░╚═╝╚═════╝░░░░╚═╝░░░  ╚═╝╚═╝░░░░░╚═╝╚═╝░░░░░░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░╚═════╝░
+```
 
 [![pub version](https://img.shields.io/pub/v/tidy_imports)](https://pub.dev/packages/tidy_imports)
 [![pub points](https://img.shields.io/pub/points/tidy_imports)](https://pub.dev/packages/tidy_imports/score)
@@ -6,9 +14,12 @@
 [![CI](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml/badge.svg)](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Dart CLI tool that automatically organizes your import statements — alphabetically sorted and grouped by origin.
+A Dart CLI tool that automatically organizes your import statements — sorted
+alphabetically and grouped by origin (Dart, Flutter, package, project).
 
-Spiritual successor to [import_sorter](https://github.com/fluttercommunity/import_sorter), built for Dart 3+ with bug fixes, new flags, and monorepo support.
+Spiritual successor to [import_sorter](https://github.com/fluttercommunity/import_sorter),
+rebuilt for Dart 3+ with bug fixes, new flags, custom import tiers, `pubspec.yaml`
+sorting, and monorepo support.
 
 ## How it works
 
@@ -54,17 +65,12 @@ import 'another_file.dart';
 
 ### As a dev dependency (per project)
 
-Add to `dev_dependencies` in `pubspec.yaml`:
-
-```yaml
-dev_dependencies:
-  tidy_imports: ^1.0.0
-```
-
 ```sh
-dart pub get
+dart pub add dev:tidy_imports
 dart run tidy_imports
 ```
+
+This adds the latest version to `dev_dependencies` for you.
 
 ### Global activation
 
@@ -203,7 +209,7 @@ The command exits with code `1` if any file has unsorted imports, causing the CI
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v1.0.0'
+    rev: 'v1.1.0' # use the latest release tag
     hooks:
       - id: dart-import-sorter      # for plain Dart projects
       # - id: flutter-import-sorter # for Flutter projects
@@ -227,15 +233,24 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Positional file args | Passes raw `args` (includes flags) | Uses `argResults.rest` |
 | `pubspec.lock` in monorepos | Crashes with `PathNotFoundException` | Graceful fallback |
 | `packages/` folder | Not scanned | Scanned |
-| `--dry-run` flag | Not available | Available |
-| `--no-blank-lines` flag | Not available | Available |
+| `--dry-run` preview | Not available | Available |
+| `--no-blank-lines` | Not available | Available |
+| Custom import tiers | Not available | Available |
+| Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
+| Standalone config file | Not available | `tidy_imports.yaml` |
+| Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
 | Dart SDK | `>=2.12.0` | `>=3.0.0` |
 | Conditional imports | Misclassified | Handled correctly |
 | Versioning | Manual | Automated via Release Please |
 
 ## Contributing
 
-Pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit format, and release process.
+Pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup,
+commit format, and the release process.
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## Credits
 
@@ -244,4 +259,4 @@ of [import_sorter](https://github.com/fluttercommunity/import_sorter).
 
 ## License
 
-MIT
+[MIT](LICENSE) © Franklyn R. Silva
