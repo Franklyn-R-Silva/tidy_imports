@@ -10,6 +10,13 @@ name: Release Please
 # On every push to main, this action opens/updates a "Release PR" that
 # bumps pubspec.yaml + lib/src/version.dart + CHANGELOG.md.
 # Merging the Release PR creates the vX.Y.Z tag and GitHub Release.
+#
+# NOTE: opening a PR from Actions requires ONE of:
+#   (a) Settings -> Actions -> General -> Workflow permissions ->
+#       enable "Allow GitHub Actions to create and approve pull requests", OR
+#   (b) a Personal Access Token stored as the RELEASE_PLEASE_TOKEN secret
+#       (repo scope) — used automatically below when present.
+# The default GITHUB_TOKEN alone cannot open PRs while (a) is disabled.
 on:
   push:
     branches: [main]
@@ -29,4 +36,6 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer a PAT if provided (works even when the repo setting is off);
+          # otherwise fall back to the default token (needs the repo setting on).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
