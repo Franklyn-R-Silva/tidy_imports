@@ -18,6 +18,8 @@
 /// full documentation and configuration options.
 library tidy_imports;
 
+export 'config.dart' show TidyConfig, CustomTier;
 export 'src/version.dart' show packageVersion, packageName;
 export 'sort.dart' show sortImports, ImportSortData;
 export 'files.dart' show dartFiles;
+export 'pubspec_sort.dart' show sortPubspec;

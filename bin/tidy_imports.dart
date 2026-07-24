@@ -8,7 +8,9 @@ import 'package:yaml/yaml.dart';
 
 // Project imports:
 import 'package:tidy_imports/args.dart' as local_args;
+import 'package:tidy_imports/config.dart';
 import 'package:tidy_imports/files.dart' as files;
+import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
 import 'package:tidy_imports/sort.dart' as sort;
 
 void main(List<String> args) {
@@ -20,6 +22,7 @@ void main(List<String> args) {
     ..addFlag('exit-if-changed', negatable: false)
     ..addFlag('no-comments', negatable: false)
     ..addFlag('no-blank-lines', negatable: false)
+    ..addFlag('sort-pubspec', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
   final argResults = parser.parse(args);
@@ -54,30 +57,17 @@ void main(List<String> args) {
     dependencies.addAll((pubspecLock['packages'] as YamlMap).keys);
   }
 
-  var emojis = false;
-  var noComments = false;
-  var noBlankLines = false;
-  final ignoredFiles = <dynamic>[];
+  final config = argResults['ignore-config'] == true
+      ? TidyConfig.fromYaml(null)
+      : TidyConfig.load(currentPath, pubspecYaml as YamlMap);
 
-  if (argResults['ignore-config'] != true) {
-    final config = pubspecYaml['tidy_imports'];
-    if (config != null) {
-      if (config['emojis'] != null) emojis = config['emojis'] as bool;
-      if (config['comments'] != null) {
-        noComments = !(config['comments'] as bool);
-      }
-      if (config['blank_lines'] != null) {
-        noBlankLines = !(config['blank_lines'] as bool);
-      }
-      if (config['ignored_files'] != null) {
-        ignoredFiles.addAll(config['ignored_files'] as YamlList);
-      }
-    }
-  }
-
-  if (!emojis) emojis = argResults['emojis'] == true;
-  if (!noComments) noComments = argResults['no-comments'] == true;
-  if (!noBlankLines) noBlankLines = argResults['no-blank-lines'] == true;
+  final emojis = config.emojis || argResults['emojis'] == true;
+  final noComments = config.noComments || argResults['no-comments'] == true;
+  final noBlankLines =
+      config.noBlankLines || argResults['no-blank-lines'] == true;
+  final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
+  final customTiers = config.customTiers;
+  final ignoredFiles = config.ignoredFiles;
   final exitOnChange = argResults['exit-if-changed'] == true;
   final dryRun = argResults['dry-run'] == true;
 
@@ -91,8 +81,7 @@ void main(List<String> args) {
 
   for (final pattern in ignoredFiles) {
     dartFiles.removeWhere(
-      (key, _) =>
-          RegExp(pattern as String).hasMatch(key.replaceFirst(currentPath, '')),
+      (key, _) => RegExp(pattern).hasMatch(key.replaceFirst(currentPath, '')),
     );
   }
 
@@ -116,6 +105,7 @@ void main(List<String> args) {
       noComments,
       filePath: filePath.replaceFirst(currentPath, ''),
       noBlankLines: noBlankLines,
+      customTiers: customTiers,
     );
     if (!result.updated) continue;
 
@@ -143,4 +133,20 @@ void main(List<String> args) {
   final action = dryRun ? 'Would sort' : 'Sorted';
   stdout.writeln(
       '┗━━ $success $action ${sortedFiles.length} files in ${elapsed}s');
+
+  // Optionally sort pubspec.yaml dependency sections (issue import_sorter#89).
+  if (sortPubspec) {
+    final original = pubspecYamlFile.readAsStringSync();
+    final sorted = pubspec_sort.sortPubspec(original);
+    if (sorted != original) {
+      if (exitOnChange) {
+        stdout.writeln(
+            '\n┗━━🚨 pubspec.yaml dependencies are not sorted alphabetically.');
+        exit(1);
+      }
+      if (!dryRun) pubspecYamlFile.writeAsStringSync(sorted);
+      final pubspecVerb = dryRun ? 'Would sort' : 'Sorted';
+      stdout.writeln('$success $pubspecVerb pubspec.yaml dependencies');
+    }
+  }
 }

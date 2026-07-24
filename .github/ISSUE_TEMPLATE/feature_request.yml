@@ -1,0 +1,27 @@
+name: ✨ Feature request
+description: Suggest an idea or improvement for tidy_imports
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that tidy_imports doesn't support?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? A flag, a config option, new behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: Show the before/after or the config you'd expect.
+      render: yaml
+    validations:
+      required: false

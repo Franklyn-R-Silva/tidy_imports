@@ -1,0 +1,52 @@
+name: 🐛 Bug report
+description: Report a problem with tidy_imports
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report! Please fill in the
+        details below so we can reproduce and fix it quickly.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: Running `dart run tidy_imports` on this file produced ...
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal sample
+      description: The smallest Dart file (or pubspec snippet) that reproduces it.
+      render: dart
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: tidy_imports version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: dart-version
+    attributes:
+      label: Dart / Flutter SDK version
+      description: Output of `dart --version` (or `flutter --version`).
+      placeholder: "Dart SDK version: 3.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true

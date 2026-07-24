@@ -38,6 +38,8 @@ void outputHelp() {
       .writeln('      --no-comments      Omit group comments before imports.');
   stdout.writeln(
       '      --no-blank-lines   Omit blank lines between import groups.');
+  stdout
+      .writeln('      --sort-pubspec     Also sort pubspec.yaml dependencies.');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');

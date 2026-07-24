@@ -1,6 +1,9 @@
 // Dart imports:
 import 'dart:io';
 
+// Project imports:
+import 'package:tidy_imports/config.dart';
+
 /// Sort the imports of a dart file.
 ///
 /// Returns [ImportSortData] containing the sorted file content and whether
@@ -13,6 +16,7 @@ ImportSortData sortImports(
   bool noComments, {
   String? filePath,
   bool noBlankLines = false,
+  List<CustomTier> customTiers = const [],
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -32,12 +36,20 @@ ImportSortData sortImports(
   final projectRelativeImports = <String>[];
   final projectImports = <String>[];
 
+  // Custom tiers (issue import_sorter#81): one bucket per configured tier,
+  // filled with package imports whose line contains the tier's pattern.
+  final tierImports = {for (final t in customTiers) t: <String>[]};
+
+  String customTierComment(CustomTier tier) =>
+      '//${emojis ? ' 🧩 ' : ' '}${tier.name}';
+
   bool noImports() =>
       dartImports.isEmpty &&
       flutterImports.isEmpty &&
       packageImports.isEmpty &&
       projectImports.isEmpty &&
-      projectRelativeImports.isEmpty;
+      projectRelativeImports.isEmpty &&
+      tierImports.values.every((list) => list.isEmpty);
 
   var isMultiLineString = false;
   var isConditionalImport = false;
@@ -87,7 +99,12 @@ ImportSortData sortImports(
       } else if (line.contains('package:$packageName/')) {
         projectImports.add(line);
       } else if (line.contains('package:')) {
-        packageImports.add(line);
+        final tier = _matchTier(line, customTiers);
+        if (tier != null) {
+          tierImports[tier]!.add(line);
+        } else {
+          packageImports.add(line);
+        }
       } else {
         projectRelativeImports.add(line);
       }
@@ -100,7 +117,8 @@ ImportSortData sortImports(
             line == flutterImportComment(true) ||
             line == packageImportComment(true) ||
             line == projectImportComment(true) ||
-            line == '// 📱 Flutter imports:') &&
+            line == '// 📱 Flutter imports:' ||
+            _isCustomTierComment(line, customTiers)) &&
         lines[i + 1].startsWith('import ') &&
         lines[i + 1].trimRight().endsWith(';')) {
       // Skip existing import group comments — they will be re-added sorted
@@ -149,12 +167,20 @@ ImportSortData sortImports(
     packageImports.sort();
     sortedLines.addAll(packageImports);
   }
+  var hasPrecedingGroup = dartImports.isNotEmpty ||
+      flutterImports.isNotEmpty ||
+      packageImports.isNotEmpty;
+  for (final tier in customTiers) {
+    final imports = tierImports[tier]!;
+    if (imports.isEmpty) continue;
+    addSeparator(hasPrecedingGroup);
+    if (!noComments) sortedLines.add(customTierComment(tier));
+    imports.sort();
+    sortedLines.addAll(imports);
+    hasPrecedingGroup = true;
+  }
   if (projectImports.isNotEmpty || projectRelativeImports.isNotEmpty) {
-    addSeparator(
-      dartImports.isNotEmpty ||
-          flutterImports.isNotEmpty ||
-          packageImports.isNotEmpty,
-    );
+    addSeparator(hasPrecedingGroup);
     if (!noComments) sortedLines.add(projectImportComment(emojis));
     projectImports.sort();
     projectRelativeImports.sort();
@@ -196,6 +222,25 @@ ImportSortData sortImports(
 
 int _timesContained(String string, String looking) =>
     string.split(looking).length - 1;
+
+/// Returns the first custom tier whose pattern matches [line], or null.
+CustomTier? _matchTier(String line, List<CustomTier> tiers) {
+  for (final tier in tiers) {
+    if (line.contains(tier.pattern)) return tier;
+  }
+  return null;
+}
+
+/// Whether [line] is a previously written comment for any custom tier
+/// (emoji or plain form), so it can be stripped and re-added on sort.
+bool _isCustomTierComment(String line, List<CustomTier> tiers) {
+  for (final tier in tiers) {
+    if (line == '// ${tier.name}' || line == '// 🧩 ${tier.name}') {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// Result of a sort operation.
 class ImportSortData {

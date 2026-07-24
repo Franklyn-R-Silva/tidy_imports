@@ -99,9 +99,10 @@ dart run tidy_imports --exit-if-changed
 | `--emojis` | `-e` | Add emojis to import group comments |
 | `--no-comments` | | Omit group comments entirely |
 | `--no-blank-lines` | | Omit blank lines between import groups |
+| `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
-| `--ignore-config` | | Ignore `tidy_imports:` block in `pubspec.yaml` |
+| `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
 | `--version` | `-v` | Print version and exit |
 | `--help` | `-h` | Show help |
 
@@ -114,12 +115,76 @@ tidy_imports:
   emojis: false          # Default: false — add emojis to group comments
   comments: true         # Default: true  — add group comments
   blank_lines: true      # Default: true  — blank lines between groups
+  sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
   ignored_files:         # Regex patterns applied to relative file paths
-    - \/lib\/generated\/
-    - \.g\.dart$
+    - \/lib\/generated\/  # ignore a whole folder
+    - \.g\.dart$          # ignore generated files (build_runner)
+    - \.freezed\.dart$    # ignore freezed files
+    - \.gr\.dart$         # ignore auto_route files
+  tiers:                 # Custom import groups (see below)
+    - name: "Company imports:"
+      pattern: "package:acme_"
 ```
 
-The `ignored_files` patterns are matched against the path relative to the project root (e.g. `/lib/src/foo.dart`).
+The `ignored_files` patterns are regular expressions matched against the path
+relative to the project root (e.g. `/lib/src/foo.dart`).
+
+### Standalone config file
+
+Instead of the `pubspec.yaml` block, you can place the same options in a
+`tidy_imports.yaml` file at the project root. When present, it takes precedence
+over the `pubspec.yaml` block — handy for monorepos with a shared root config.
+
+```yaml
+# tidy_imports.yaml
+emojis: false
+sort_pubspec: true
+ignored_files:
+  - \.g\.dart$
+```
+
+### Custom import tiers
+
+By default, all third-party packages share the single **Package imports** group.
+Custom tiers let you split out internal/shared packages into their own group,
+placed between the generic package group and your project imports:
+
+```yaml
+tidy_imports:
+  tiers:
+    - name: "Shared imports:"
+      pattern: "package:acme_shared"
+    - name: "Company imports:"
+      pattern: "package:acme_"
+```
+
+Each import whose line contains a tier's `pattern` goes into that tier (first
+match wins, so list the most specific patterns first). Result:
+
+```dart
+// Package imports:
+import 'package:http/http.dart';
+
+// Shared imports:
+import 'package:acme_shared/utils.dart';
+
+// Company imports:
+import 'package:acme_billing/api.dart';
+
+// Project imports:
+import 'package:myapp/home.dart';
+```
+
+## Sorting pubspec.yaml
+
+Pass `--sort-pubspec` (or set `sort_pubspec: true`) to also alphabetize the
+`dependencies`, `dev_dependencies`, and `dependency_overrides` sections of your
+`pubspec.yaml`. Nested dependency blocks (git/path/hosted) and comments attached
+to a dependency are preserved.
+
+```sh
+dart run tidy_imports --sort-pubspec
+```
 
 ## CI Integration
 
