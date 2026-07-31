@@ -1,5 +1,6 @@
 // Package imports:
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 // Project imports:
 import 'package:tidy_imports/config.dart';
@@ -230,6 +231,205 @@ dependencies:
     });
   });
 
+  group('test imports (fake_/mock_)', () {
+    test('splits project test doubles into their own group', () {
+      final lines = [
+        "import 'package:demo/app.dart';",
+        "import 'fake_cliente_details_repository.dart';",
+        "import 'package:demo/mock_auth_service.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        testImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/app.dart';
+
+// Test imports:
+import 'package:demo/mock_auth_service.dart';
+import 'fake_cliente_details_repository.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('is off by default', () {
+      final lines = [
+        "import 'fake_repo.dart';",
+        "import 'package:demo/app.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/app.dart';
+import 'fake_repo.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('leaves third-party packages named like doubles alone', () {
+      final lines = [
+        "import 'package:fake_async/fake_async.dart';",
+        "import 'package:mock_web_server/mock_web_server.dart';",
+        "import 'package:demo/app.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        testImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Package imports:
+import 'package:fake_async/fake_async.dart';
+import 'package:mock_web_server/mock_web_server.dart';
+
+// Project imports:
+import 'package:demo/app.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('honors custom prefixes', () {
+      final lines = [
+        "import 'stub_gateway.dart';",
+        "import 'fake_repo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        testImports: true,
+        testImportPrefixes: const ['stub_'],
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'fake_repo.dart';
+
+// Test imports:
+import 'stub_gateway.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('writes the emoji label when emojis are on', () {
+      final result = sortImports(
+        ["import 'fake_repo.dart';", '', 'void main() {}'],
+        'demo',
+        true,
+        false,
+        false,
+        testImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// 🧪 Test imports:
+import 'fake_repo.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('re-running a file with a test group makes no change', () {
+      const sorted = '''
+// Project imports:
+import 'package:demo/app.dart';
+
+// Test imports:
+import 'fake_repo.dart';
+
+void main() {}
+''';
+
+      final result = sortImports(
+        sorted.split('\n'),
+        'demo',
+        false,
+        false,
+        false,
+        testImports: true,
+      );
+
+      expect(result.updated, isFalse);
+    });
+  });
+
+  group('group comments inside string literals', () {
+    test('are left alone (they are content, not import headers)', () {
+      final lines = [
+        "import 'package:demo/app.dart';",
+        '',
+        'const sample = \'\'\'',
+        '// Dart imports:',
+        "import 'dart:io';",
+        '\'\'\';',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(result.sortedFile, contains('// Dart imports:\n'));
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/app.dart';
+
+const sample = \'\'\'
+// Dart imports:
+import 'dart:io';
+\'\'\';
+''',
+      );
+    });
+  });
+
   group('config (#67)', () {
     test('defaults when config is null', () {
       final config = TidyConfig.fromYaml(null);
@@ -240,6 +440,20 @@ dependencies:
       expect(config.groupProjectByFolder, isFalse);
       expect(config.ignoredFiles, isEmpty);
       expect(config.customTiers, isEmpty);
+      expect(config.testImports, isFalse);
+      expect(config.testImportPrefixes, ['fake_', 'mock_']);
+    });
+
+    test('reads test import settings', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('''
+test_imports: true
+test_import_prefixes:
+  - stub_
+'''),
+      );
+      expect(config.testImports, isTrue);
+      expect(config.testImportPrefixes, ['stub_']);
     });
   });
 }

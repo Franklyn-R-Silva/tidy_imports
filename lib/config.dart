@@ -23,11 +23,16 @@ class CustomTier {
 /// exists (issue import_sorter#67), otherwise from the `tidy_imports:` block
 /// in `pubspec.yaml`. Command-line flags take precedence over both.
 class TidyConfig {
+  /// File-name prefixes treated as test doubles when [testImports] is on.
+  static const defaultTestImportPrefixes = ['fake_', 'mock_'];
+
   final bool emojis;
   final bool noComments;
   final bool noBlankLines;
   final bool sortPubspec;
   final bool groupProjectByFolder;
+  final bool testImports;
+  final List<String> testImportPrefixes;
   final List<String> ignoredFiles;
   final List<CustomTier> customTiers;
 
@@ -39,6 +44,8 @@ class TidyConfig {
     required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
+    this.testImports = false,
+    this.testImportPrefixes = defaultTestImportPrefixes,
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -76,6 +83,13 @@ class TidyConfig {
       }
     }
 
+    final testPrefixes = <String>[];
+    if (config['test_import_prefixes'] != null) {
+      for (final prefix in config['test_import_prefixes'] as YamlList) {
+        testPrefixes.add(prefix as String);
+      }
+    }
+
     final tiers = <CustomTier>[];
     if (config['tiers'] != null) {
       for (final tier in config['tiers'] as YamlList) {
@@ -96,6 +110,9 @@ class TidyConfig {
           : !(config['blank_lines'] as bool),
       sortPubspec: config['sort_pubspec'] as bool? ?? false,
       groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
+      testImports: config['test_imports'] as bool? ?? false,
+      testImportPrefixes:
+          testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
       ignoredFiles: ignored,
       customTiers: tiers,
     );

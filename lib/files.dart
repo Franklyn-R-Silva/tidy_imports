@@ -2,6 +2,10 @@
 import 'dart:io';
 
 /// Returns all dart files found in standard project directories.
+///
+/// Positional [args] are treated as regular expressions matched against the
+/// absolute file path. Throws a [FormatException] with a readable message if a
+/// pattern is not valid — callers are expected to report it and exit.
 Map<String, File> dartFiles(String currentPath, List<String> args) {
   final dartFiles = <String, File>{};
   final allContents = [
@@ -33,10 +37,21 @@ Map<String, File> dartFiles(String currentPath, List<String> args) {
     final patterns = args.where((arg) => !arg.startsWith('-'));
     final filesToKeep = <String, File>{};
 
+    // Compile once, up front, so an invalid pattern fails immediately with a
+    // message naming it instead of a raw RegExp error mid-scan.
+    final matchers = <RegExp>[];
+    for (final pattern in patterns) {
+      try {
+        matchers.add(RegExp(pattern));
+      } on FormatException catch (e) {
+        throw FormatException('invalid file pattern "$pattern": ${e.message}');
+      }
+    }
+
     for (final fileName in dartFiles.keys) {
       var keep = false;
-      for (final pattern in patterns) {
-        if (RegExp(pattern).hasMatch(fileName)) {
+      for (final matcher in matchers) {
+        if (matcher.hasMatch(fileName)) {
           keep = true;
           break;
         }

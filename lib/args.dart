@@ -42,6 +42,9 @@ void outputHelp() {
       .writeln('      --sort-pubspec     Also sort pubspec.yaml dependencies.');
   stdout.writeln(
       '      --group-by-folder  Separate project imports by subfolder.');
+  stdout.writeln(
+      '      --test-imports     Group project test doubles (fake_/mock_)');
+  stdout.writeln('                         under their own "Test imports:".');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');

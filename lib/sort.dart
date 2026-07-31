@@ -18,6 +18,8 @@ ImportSortData sortImports(
   bool noBlankLines = false,
   List<CustomTier> customTiers = const [],
   bool groupProjectByFolder = false,
+  bool testImports = false,
+  List<String> testImportPrefixes = TidyConfig.defaultTestImportPrefixes,
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -27,6 +29,8 @@ ImportSortData sortImports(
       '//${emojis ? ' 📦 ' : ' '}Package imports:';
   String projectImportComment(bool emojis) =>
       '//${emojis ? ' 🌎 ' : ' '}Project imports:';
+  String testImportComment(bool emojis) =>
+      '//${emojis ? ' 🧪 ' : ' '}Test imports:';
 
   final beforeImportLines = <String>[];
   final afterImportLines = <String>[];
@@ -35,6 +39,12 @@ ImportSortData sortImports(
   final flutterImports = <String>[];
   final packageImports = <String>[];
   final projectRelativeImports = <String>[];
+
+  // Test doubles (fake_/mock_ files) split out of the project group when
+  // [testImports] is enabled. Mirrors the project group's package/relative
+  // split so both halves keep the same relative ordering.
+  final testDoubleImports = <String>[];
+  final testDoubleRelativeImports = <String>[];
   final projectImports = <String>[];
 
   // Custom tiers (issue import_sorter#81): one bucket per configured tier,
@@ -50,6 +60,8 @@ ImportSortData sortImports(
       packageImports.isEmpty &&
       projectImports.isEmpty &&
       projectRelativeImports.isEmpty &&
+      testDoubleImports.isEmpty &&
+      testDoubleRelativeImports.isEmpty &&
       tierImports.values.every((list) => list.isEmpty);
 
   var isMultiLineString = false;
@@ -98,7 +110,11 @@ ImportSortData sortImports(
       } else if (line.contains('package:flutter/')) {
         flutterImports.add(line);
       } else if (line.contains('package:$packageName/')) {
-        projectImports.add(line);
+        if (testImports && _isTestDouble(line, testImportPrefixes)) {
+          testDoubleImports.add(line);
+        } else {
+          projectImports.add(line);
+        }
       } else if (line.contains('package:')) {
         final tier = _matchTier(line, customTiers);
         if (tier != null) {
@@ -107,9 +123,14 @@ ImportSortData sortImports(
           packageImports.add(line);
         }
       } else {
-        projectRelativeImports.add(line);
+        if (testImports && _isTestDouble(line, testImportPrefixes)) {
+          testDoubleRelativeImports.add(line);
+        } else {
+          projectRelativeImports.add(line);
+        }
       }
-    } else if (i != lines.length - 1 &&
+    } else if (!isMultiLineString &&
+        i != lines.length - 1 &&
         (line == dartImportComment(false) ||
             line == flutterImportComment(false) ||
             line == packageImportComment(false) ||
@@ -118,6 +139,8 @@ ImportSortData sortImports(
             line == flutterImportComment(true) ||
             line == packageImportComment(true) ||
             line == projectImportComment(true) ||
+            line == testImportComment(false) ||
+            line == testImportComment(true) ||
             line == '// 📱 Flutter imports:' ||
             _isCustomTierComment(line, customTiers)) &&
         lines[i + 1].startsWith('import ') &&
@@ -197,6 +220,15 @@ ImportSortData sortImports(
     } else {
       sortedLines.addAll(allProject);
     }
+    hasPrecedingGroup = true;
+  }
+  if (testDoubleImports.isNotEmpty || testDoubleRelativeImports.isNotEmpty) {
+    addSeparator(hasPrecedingGroup);
+    if (!noComments) sortedLines.add(testImportComment(emojis));
+    testDoubleImports.sort();
+    testDoubleRelativeImports.sort();
+    sortedLines.addAll(testDoubleImports);
+    sortedLines.addAll(testDoubleRelativeImports);
   }
 
   sortedLines.add('');
@@ -234,12 +266,32 @@ ImportSortData sortImports(
 int _timesContained(String string, String looking) =>
     string.split(looking).length - 1;
 
+/// Matches the quoted URI of an import line.
+final _importUri = RegExp('''['"]([^'"]+)['"]''');
+
+/// Whether [line]'s import points at a test double — a file whose name starts
+/// with one of [prefixes] (e.g. `fake_client_repository.dart`).
+///
+/// Only ever called for project imports, so third-party packages whose name
+/// happens to start with a prefix (`package:fake_async/fake_async.dart`,
+/// `package:mock_web_server/mock_web_server.dart`) stay in the package group.
+bool _isTestDouble(String line, List<String> prefixes) {
+  final match = _importUri.firstMatch(line);
+  if (match == null) return false;
+  final uri = match.group(1)!;
+  final fileName = uri.substring(uri.lastIndexOf('/') + 1);
+  for (final prefix in prefixes) {
+    if (fileName.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 /// Extracts the directory portion of an import's URI (issue import_sorter#69).
 ///
 /// `import 'package:app/aaa/bbb/foo.dart';` -> `package:app/aaa/bbb`.
 /// `import 'foo.dart';` -> `''` (no directory).
 String _importDir(String line) {
-  final match = RegExp('''['"]([^'"]+)['"]''').firstMatch(line);
+  final match = _importUri.firstMatch(line);
   if (match == null) return '';
   final uri = match.group(1)!;
   final slash = uri.lastIndexOf('/');

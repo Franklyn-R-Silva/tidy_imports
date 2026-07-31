@@ -80,14 +80,18 @@ dart pub publish
 
 ## Generating Build Metadata
 
-To embed git metadata in the CLI `--version` output during development:
-
 ```sh
 dart run tool/gen_version.dart
 ```
 
-This generates `lib/src/build_info.dart` (gitignored). The CLI picks it up
-automatically if present.
+This writes `lib/src/build_info.dart` (gitignored) with the current version,
+git describe output, commit hash, and build timestamp.
+
+**The CLI does not read this file.** `--version` prints `packageVersion` from
+`lib/src/version.dart`. The generated file is a build artifact for local
+inspection and packaging scripts; wiring it into `--version` would need a
+checked-in stub, since the real file is gitignored and consumers' builds would
+fail without it.
 
 ## Project Structure
 

@@ -107,6 +107,7 @@ dart run tidy_imports --exit-if-changed
 | `--no-blank-lines` | | Omit blank lines between import groups |
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
 | `--group-by-folder` | | Separate project imports by subfolder |
+| `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -124,6 +125,10 @@ tidy_imports:
   blank_lines: true      # Default: true  — blank lines between groups
   sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
   group_project_by_folder: false  # Default: false — split project imports by folder
+  test_imports: false    # Default: false — split fake_/mock_ files into their own group
+  test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
+    - fake_
+    - mock_
   ignored_files:         # Regex patterns applied to relative file paths
     - \/lib\/generated\/  # ignore a whole folder
     - \.g\.dart$          # ignore generated files (build_runner)
@@ -209,6 +214,40 @@ import 'package:myapp/ui/home_page.dart';
 import 'package:myapp/ui/settings_page.dart';
 ```
 
+## Grouping test doubles
+
+Pass `--test-imports` (or set `test_imports: true`) to pull fakes and mocks out
+of your project imports and into a dedicated group:
+
+```dart
+// Project imports:
+import 'package:myapp/cliente_details_repository.dart';
+
+// Test imports:
+import 'package:myapp/mock_auth_service.dart';
+import 'fake_cliente_details_repository.dart';
+```
+
+A file counts as a test double when it is **a project import** (relative or
+`package:<your_package>/`) **and** its file name starts with a configured
+prefix — `fake_` or `mock_` by default. Override the list with
+`test_import_prefixes` (e.g. add `stub_` or `spy_`); a custom list replaces the
+defaults rather than extending them.
+
+Third-party packages are never affected, so real pub packages whose names look
+like doubles — `package:fake_async/fake_async.dart`,
+`package:mock_web_server/mock_web_server.dart` — stay in **Package imports**.
+To group testing libraries such as `mockito`, use a
+[custom tier](#custom-import-tiers) instead:
+
+```yaml
+tidy_imports:
+  test_imports: true
+  tiers:
+    - name: "Testing imports:"
+      pattern: "package:mockito"
+```
+
 ## CI Integration
 
 ### GitHub Actions
@@ -258,6 +297,9 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Custom import tiers | Not available | Available |
 | Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
 | Group project imports by folder | Not available | `--group-by-folder` |
+| Separate group for test doubles | Not available | `--test-imports` |
+| Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
+| Group comments inside string literals | Silently deleted | Preserved |
 | Standalone config file | Not available | `tidy_imports.yaml` |
 | Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
 | `--exit-if-changed` in CI | Aborts on first unsorted file | Reports every unsorted file |

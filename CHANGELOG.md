@@ -1,4 +1,56 @@
+## 1.2.0
+
+A dedicated group for test doubles, plus two fixes — one of which prevented
+silent file corruption.
+
+### Features
+- **`--test-imports`** (`test_imports: true`) — pull project test doubles into
+  their own `// Test imports:` group, placed after project imports:
+
+  ```dart
+  // Project imports:
+  import 'package:myapp/cliente_details_repository.dart';
+
+  // Test imports:
+  import 'package:myapp/mock_auth_service.dart';
+  import 'fake_cliente_details_repository.dart';
+  ```
+
+  A file qualifies when it is a **project** import (relative or
+  `package:<your_package>/`) **and** its file name starts with a configured
+  prefix. Defaults are `fake_` and `mock_`; override with
+  `test_import_prefixes` (a custom list replaces the defaults).
+- Third-party packages are never reclassified, so real pub packages that look
+  like doubles — `package:fake_async/`, `package:mock_web_server/` — stay in
+  **Package imports**. Use a custom tier to group testing libraries such as
+  `mockito`.
+
+### Fixes
+- **Group comments inside string literals are no longer deleted.** The comment
+  stripping pass did not check whether it was inside a triple-quoted string, so
+  a line like `// Dart imports:` embedded in a multi-line string was silently
+  removed — corrupting fixtures, docs, and code-generation templates. The
+  import-parsing branch already guarded against this; the stripping branch now
+  does too.
+- **Invalid file patterns no longer crash the CLI.** Positional arguments are
+  regular expressions; a malformed one (e.g. `"lib/[a-z.dart"`) threw an
+  unhandled `FormatException` with a stack trace. Patterns are now compiled up
+  front and reported as `Error: invalid file pattern "..."` with exit code 1.
+
+### Tests
+- New end-to-end CLI suite (`test/cli_test.dart`) covering file writing,
+  `--dry-run` read-only behavior, `--exit-if-changed` exit codes, CRLF
+  preservation, `ignored_files`, and running without a `pubspec.lock`. The
+  existing suites only exercised the pure functions in `lib/`.
+
+### Docs
+- `CLAUDE.md` for AI-assisted contributions.
+- Corrected the claim that the CLI reads the generated `lib/src/build_info.dart`
+  — it does not; `--version` prints the constant in `lib/src/version.dart`.
+
 ## 1.1.0
+
+Tagged but never published to pub.dev; its contents ship as part of 1.2.0.
 
 New features and fixes addressing long-standing
 [import_sorter](https://github.com/fluttercommunity/import_sorter) issues.

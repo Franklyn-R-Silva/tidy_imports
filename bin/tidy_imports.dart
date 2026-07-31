@@ -25,6 +25,7 @@ void main(List<String> args) {
     ..addFlag('no-blank-lines', negatable: false)
     ..addFlag('sort-pubspec', negatable: false)
     ..addFlag('group-by-folder', negatable: false)
+    ..addFlag('test-imports', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
   final argResults = parser.parse(args);
@@ -70,12 +71,21 @@ void main(List<String> args) {
   final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
   final groupByFolder =
       config.groupProjectByFolder || argResults['group-by-folder'] == true;
+  final testImports = config.testImports || argResults['test-imports'] == true;
   final customTiers = config.customTiers;
   final ignoredFiles = config.ignoredFiles;
   final exitOnChange = argResults['exit-if-changed'] == true;
   final dryRun = argResults['dry-run'] == true;
 
-  final dartFiles = files.dartFiles(currentPath, argResults.rest);
+  // File patterns are regular expressions; a malformed one is a user error,
+  // not a crash.
+  final Map<String, File> dartFiles;
+  try {
+    dartFiles = files.dartFiles(currentPath, argResults.rest);
+  } on FormatException catch (e) {
+    stderr.writeln('Error: ${e.message}');
+    exit(1);
+  }
 
   final containsFlutter = dependencies.contains('flutter');
   final registrantPath = '$currentPath/lib/generated_plugin_registrant.dart';
@@ -122,6 +132,8 @@ void main(List<String> args) {
       noBlankLines: noBlankLines,
       customTiers: customTiers,
       groupProjectByFolder: groupByFolder,
+      testImports: testImports,
+      testImportPrefixes: config.testImportPrefixes,
     );
     if (!result.updated) continue;
 

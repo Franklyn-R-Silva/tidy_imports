@@ -2,9 +2,10 @@
 //
 // Run: dart run tool/gen_version.dart
 //
-// The generated file is gitignored (it's a build artifact).
-// If it's missing at runtime, the CLI falls back to the version constant
-// in lib/src/version.dart (which IS in git and updated by Release Please).
+// The generated file is gitignored (it's a build artifact) and is NOT read by
+// the CLI: `--version` prints the constant in lib/src/version.dart, which IS in
+// git and updated by Release Please. This output is for local inspection and
+// packaging scripts.
 
 // Dart imports:
 import 'dart:io';
