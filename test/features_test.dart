@@ -134,6 +134,214 @@ void main() {}
     });
   });
 
+  group('separate relative imports (#1)', () {
+    test('inserts a blank line before relative project imports', () {
+      final lines = [
+        "import 'package:demo/home.dart';",
+        "import 'another_file.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/home.dart';
+
+import 'another_file.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('re-running a separated file makes no change', () {
+      final sorted = '''
+// Project imports:
+import 'package:demo/home.dart';
+
+import 'another_file.dart';
+
+void main() {}
+''';
+
+      final result = sortImports(
+        sorted.split('\n'),
+        'demo',
+        false,
+        false,
+        false,
+        separateRelativeImports: true,
+      );
+
+      expect(result.updated, isFalse);
+    });
+
+    test('is a no-op when blank lines are off', () {
+      final lines = [
+        "import 'package:demo/home.dart';",
+        "import 'another_file.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        noBlankLines: true,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/home.dart';
+import 'another_file.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('adds no leading blank line when every import is relative', () {
+      final lines = [
+        "import 'b.dart';",
+        "import 'a.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'a.dart';
+import 'b.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('adds no trailing blank line when there are no relative imports', () {
+      final lines = [
+        "import 'package:demo/b.dart';",
+        "import 'package:demo/a.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/a.dart';
+import 'package:demo/b.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('does not stack a second blank line on top of folder grouping', () {
+      final lines = [
+        "import 'package:demo/aaa/foo.dart';",
+        "import 'b.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        groupProjectByFolder: true,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/aaa/foo.dart';
+
+import 'b.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('separates relative test doubles too', () {
+      final lines = [
+        "import 'fake_repo.dart';",
+        "import 'package:demo/mock_service.dart';",
+        "import 'package:demo/z.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        testImports: true,
+        separateRelativeImports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/z.dart';
+
+// Test imports:
+import 'package:demo/mock_service.dart';
+
+import 'fake_repo.dart';
+
+void main() {}
+''',
+      );
+    });
+  });
+
   group('no blank lines (#80)', () {
     test('omits separators between groups', () {
       final lines = [
@@ -438,6 +646,7 @@ import 'dart:io';
       expect(config.noBlankLines, isFalse);
       expect(config.sortPubspec, isFalse);
       expect(config.groupProjectByFolder, isFalse);
+      expect(config.separateRelativeImports, isFalse);
       expect(config.ignoredFiles, isEmpty);
       expect(config.customTiers, isEmpty);
       expect(config.testImports, isFalse);
@@ -454,6 +663,13 @@ test_import_prefixes:
       );
       expect(config.testImports, isTrue);
       expect(config.testImportPrefixes, ['stub_']);
+    });
+
+    test('reads separate_relative_imports', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('separate_relative_imports: true'),
+      );
+      expect(config.separateRelativeImports, isTrue);
     });
   });
 }

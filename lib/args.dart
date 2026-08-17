@@ -45,6 +45,10 @@ void outputHelp() {
   stdout.writeln(
       '      --test-imports     Group project test doubles (fake_/mock_)');
   stdout.writeln('                         under their own "Test imports:".');
+  stdout.writeln('      --separate-relative-imports');
+  stdout.writeln(
+      '                         Blank line before relative imports, matching');
+  stdout.writeln('                         dart format (Dart 3.13+).');
   stdout.writeln('\nExamples:');
   stdout.writeln('  dart run tidy_imports');
   stdout.writeln('  dart run tidy_imports -e');

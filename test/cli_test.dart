@@ -131,6 +131,27 @@ void main() {}
     );
   });
 
+  test('--separate-relative-imports splits the project group', () {
+    final file = libFile('main.dart')
+      ..writeAsStringSync("import 'another_file.dart';\n"
+          "import 'package:demo/z.dart';\n"
+          '\n'
+          'void main() {}\n');
+
+    expect(run(['--separate-relative-imports']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      '''
+// Project imports:
+import 'package:demo/z.dart';
+
+import 'another_file.dart';
+
+void main() {}
+''',
+    );
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 

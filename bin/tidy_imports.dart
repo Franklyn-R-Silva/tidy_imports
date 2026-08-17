@@ -25,6 +25,7 @@ void main(List<String> args) {
     ..addFlag('no-blank-lines', negatable: false)
     ..addFlag('sort-pubspec', negatable: false)
     ..addFlag('group-by-folder', negatable: false)
+    ..addFlag('separate-relative-imports', negatable: false)
     ..addFlag('test-imports', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
@@ -71,6 +72,8 @@ void main(List<String> args) {
   final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
   final groupByFolder =
       config.groupProjectByFolder || argResults['group-by-folder'] == true;
+  final separateRelativeImports = config.separateRelativeImports ||
+      argResults['separate-relative-imports'] == true;
   final testImports = config.testImports || argResults['test-imports'] == true;
   final customTiers = config.customTiers;
   final ignoredFiles = config.ignoredFiles;
@@ -134,6 +137,7 @@ void main(List<String> args) {
       groupProjectByFolder: groupByFolder,
       testImports: testImports,
       testImportPrefixes: config.testImportPrefixes,
+      separateRelativeImports: separateRelativeImports,
     );
     if (!result.updated) continue;
 
