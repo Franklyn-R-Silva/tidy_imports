@@ -48,6 +48,14 @@ silent file corruption.
 - Corrected the claim that the CLI reads the generated `lib/src/build_info.dart`
   — it does not; `--version` prints the constant in `lib/src/version.dart`.
 
+## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
+
+
+### Features
+
+* add --separate-relative-imports for dart format 3.13+ interop ([5ebf3f0](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ebf3f095ac02149ecdcf67810e96076e371f7a6))
+* add --separate-relative-imports for dart format 3.13+ interop ([2bd19f9](https://github.com/Franklyn-R-Silva/tidy_imports/commit/2bd19f9b03bdcaa2a139ab1a63968585b57a6417))
+
 ## 1.1.0
 
 Tagged but never published to pub.dev; its contents ship as part of 1.2.0.
