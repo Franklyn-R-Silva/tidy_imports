@@ -108,6 +108,7 @@ dart run tidy_imports --exit-if-changed
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
 | `--group-by-folder` | | Separate project imports by subfolder |
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
+| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -125,6 +126,7 @@ tidy_imports:
   blank_lines: true      # Default: true  — blank lines between groups
   sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
   group_project_by_folder: false  # Default: false — split project imports by folder
+  separate_relative_imports: false  # Default: false — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
     - fake_
@@ -214,6 +216,28 @@ import 'package:myapp/ui/home_page.dart';
 import 'package:myapp/ui/settings_page.dart';
 ```
 
+## Matching `dart format` (Dart 3.13+)
+
+Since [Dart 3.13](https://dart.dev/blog/announcing-dart-3-13#tools-updates) the
+formatter inserts a blank line between the `package:` and relative import
+sections. Because `tidy_imports` keeps `package:<your_project>/…` and relative
+imports together in one **Project imports:** block, the two tools used to undo
+each other on every run.
+
+Pass `--separate-relative-imports` (or set `separate_relative_imports: true`) to
+emit that blank line up front, so both tools agree and the file stops flip-flopping:
+
+```dart
+// Project imports:
+import 'package:myapp/home.dart';
+
+import 'another_file.dart';
+```
+
+The option is a no-op when blank lines are disabled (`--no-blank-lines` /
+`blank_lines: false`), and it never doubles up with `--group-by-folder`, which
+already breaks at that boundary. It applies to the `--test-imports` group too.
+
 ## Grouping test doubles
 
 Pass `--test-imports` (or set `test_imports: true`) to pull fakes and mocks out
@@ -298,6 +322,7 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
 | Group project imports by folder | Not available | `--group-by-folder` |
 | Separate group for test doubles | Not available | `--test-imports` |
+| `dart format` 3.13+ import sections | Fights the formatter | `--separate-relative-imports` |
 | Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
 | Group comments inside string literals | Silently deleted | Preserved |
 | Standalone config file | Not available | `tidy_imports.yaml` |

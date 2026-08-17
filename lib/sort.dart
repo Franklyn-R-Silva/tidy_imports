@@ -20,6 +20,7 @@ ImportSortData sortImports(
   bool groupProjectByFolder = false,
   bool testImports = false,
   List<String> testImportPrefixes = TidyConfig.defaultTestImportPrefixes,
+  bool separateRelativeImports = false,
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -174,6 +175,16 @@ ImportSortData sortImports(
     if (!noBlankLines && hasPrevious) sortedLines.add('');
   }
 
+  // Since Dart 3.13 `dart format` puts a blank line between the `package:` and
+  // relative import sections. Without one, the two tools undo each other on
+  // every run (issue #1), so [separateRelativeImports] emits it up front.
+  // Never fires when blank lines are switched off.
+  bool separateBefore(List<String> packageForm, List<String> relativeForm) =>
+      separateRelativeImports &&
+      !noBlankLines &&
+      packageForm.isNotEmpty &&
+      relativeForm.isNotEmpty;
+
   if (dartImports.isNotEmpty) {
     if (!noComments) sortedLines.add(dartImportComment(emojis));
     dartImports.sort();
@@ -208,17 +219,23 @@ ImportSortData sortImports(
     if (!noComments) sortedLines.add(projectImportComment(emojis));
     projectImports.sort();
     projectRelativeImports.sort();
-    final allProject = [...projectImports, ...projectRelativeImports];
     if (groupProjectByFolder && !noBlankLines) {
+      // Folder grouping already breaks at the package-form/relative-form
+      // boundary (their directories can never match), so the two features
+      // never stack up two blank lines.
       String? prevDir;
-      for (final line in allProject) {
+      for (final line in [...projectImports, ...projectRelativeImports]) {
         final dir = _importDir(line);
         if (prevDir != null && dir != prevDir) sortedLines.add('');
         sortedLines.add(line);
         prevDir = dir;
       }
     } else {
-      sortedLines.addAll(allProject);
+      sortedLines.addAll(projectImports);
+      if (separateBefore(projectImports, projectRelativeImports)) {
+        sortedLines.add('');
+      }
+      sortedLines.addAll(projectRelativeImports);
     }
     hasPrecedingGroup = true;
   }
@@ -228,6 +245,9 @@ ImportSortData sortImports(
     testDoubleImports.sort();
     testDoubleRelativeImports.sort();
     sortedLines.addAll(testDoubleImports);
+    if (separateBefore(testDoubleImports, testDoubleRelativeImports)) {
+      sortedLines.add('');
+    }
     sortedLines.addAll(testDoubleRelativeImports);
   }
 

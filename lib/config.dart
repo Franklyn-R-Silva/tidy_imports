@@ -31,6 +31,7 @@ class TidyConfig {
   final bool noBlankLines;
   final bool sortPubspec;
   final bool groupProjectByFolder;
+  final bool separateRelativeImports;
   final bool testImports;
   final List<String> testImportPrefixes;
   final List<String> ignoredFiles;
@@ -44,6 +45,7 @@ class TidyConfig {
     required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
+    this.separateRelativeImports = false,
     this.testImports = false,
     this.testImportPrefixes = defaultTestImportPrefixes,
   });
@@ -110,6 +112,8 @@ class TidyConfig {
           : !(config['blank_lines'] as bool),
       sortPubspec: config['sort_pubspec'] as bool? ?? false,
       groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
+      separateRelativeImports:
+          config['separate_relative_imports'] as bool? ?? false,
       testImports: config['test_imports'] as bool? ?? false,
       testImportPrefixes:
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
