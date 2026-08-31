@@ -52,6 +52,29 @@ the sorted block, and it is what makes sorting `export` possible at all.
 - Changelog sections reordered newest-first. 1.2.0 had been sitting above
   1.3.0, so pub.dev was rendering the wrong version as the latest.
 
+## [1.5.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.0...v1.5.0) (2026-08-31)
+
+
+### Features
+
+* add --no-blank-lines flag, packages/ scan, and monorepo pubspec.lock fix ([7c40e4c](https://github.com/Franklyn-R-Silva/tidy_imports/commit/7c40e4cf26e0cec800cfd9273b8db80a069974e5))
+* add --separate-relative-imports for dart format 3.13+ interop ([5ebf3f0](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ebf3f095ac02149ecdcf67810e96076e371f7a6))
+* add --separate-relative-imports for dart format 3.13+ interop ([2bd19f9](https://github.com/Franklyn-R-Silva/tidy_imports/commit/2bd19f9b03bdcaa2a139ab1a63968585b57a6417))
+* add --test-imports group for fake_/mock_ test doubles ([f74a957](https://github.com/Franklyn-R-Silva/tidy_imports/commit/f74a957bb976eaf0f0edef2a903a78300e6febfc))
+* add executables entry so tidy_imports runs as a direct command ([53ccafe](https://github.com/Franklyn-R-Silva/tidy_imports/commit/53ccafee4167d3d4664abce9b628074783aa4429))
+* add versioning system, --version/--dry-run flags, and pub.dev improvements ([4eadab8](https://github.com/Franklyn-R-Silva/tidy_imports/commit/4eadab86468004c020cf5dadc0d15a63eadd3b72))
+* custom import tiers, pubspec sorting, standalone config, and community files ([4afc1ea](https://github.com/Franklyn-R-Silva/tidy_imports/commit/4afc1ea4bfa3af814538013aca8fd87371ea3a48))
+* group project imports by subfolder (--group-by-folder) ([94880bd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/94880bd865d2f7b57c6e8f99abb57b8a7383ff31))
+* initial release v1.0.0 — spiritual successor to import_sorter ([f010e2f](https://github.com/Franklyn-R-Silva/tidy_imports/commit/f010e2fd26fa707a1a89d85c91a65eab526d9894))
+* read directives whole, and sort exports and folder depth on top of it ([d452731](https://github.com/Franklyn-R-Silva/tidy_imports/commit/d4527310b1f215d953380d6e7144f11de648a2da))
+* read directives whole, and sort exports and folder depth on top of it ([371b434](https://github.com/Franklyn-R-Silva/tidy_imports/commit/371b4344a524e99872b404b9a555c82f101e5b04))
+* report all unsorted files in --exit-if-changed and fix pre-commit hooks ([48af73e](https://github.com/Franklyn-R-Silva/tidy_imports/commit/48af73e574bec0ae69eda658cc4152897d8e36d2))
+
+
+### Bug Fixes
+
+* preserve original line endings (CRLF) when rewriting files ([c3b7983](https://github.com/Franklyn-R-Silva/tidy_imports/commit/c3b7983e22d4e13501af60fa4954b05710bdc50a))
+
 ## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
 
 
