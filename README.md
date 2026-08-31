@@ -106,7 +106,9 @@ dart run tidy_imports --exit-if-changed
 | `--no-comments` | | Omit group comments entirely |
 | `--no-blank-lines` | | Omit blank lines between import groups |
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
+| `--sort-exports` | | Also sort `export` directives into their own block |
 | `--group-by-folder` | | Separate project imports by subfolder |
+| `--group-by-folder-depth=<n>` | | Folder segments to group project imports by (`0` = whole path; above `0` implies `--group-by-folder`) |
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
 | `--dry-run` | | Preview changes without writing files |
@@ -125,7 +127,9 @@ tidy_imports:
   comments: true         # Default: true  — add group comments
   blank_lines: true      # Default: true  — blank lines between groups
   sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
+  sort_exports: false    # Default: false — also sort export directives
   group_project_by_folder: false  # Default: false — split project imports by folder
+  group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
   separate_relative_imports: false  # Default: false — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
@@ -143,6 +147,13 @@ tidy_imports:
 
 The `ignored_files` patterns are regular expressions matched against the path
 relative to the project root (e.g. `/lib/src/foo.dart`).
+
+`sort_exports` turns on the separate `export` block described in
+[Sorting exports](#sorting-exports). `group_project_by_folder_depth` limits how
+much of the folder path counts as a grouping key, as described in
+[Limiting the folder grouping depth](#limiting-the-folder-grouping-depth) — any
+value above `0` enables folder grouping on its own, so `group_project_by_folder`
+does not have to be set as well.
 
 ### Standalone config file
 
@@ -201,6 +212,46 @@ to a dependency are preserved.
 dart run tidy_imports --sort-pubspec
 ```
 
+## Sorting exports
+
+Pass `--sort-exports` (or set `sort_exports: true`) to also sort your `export`
+directives. They are collected into a block of their own, placed right after the
+import block, using the same taxonomy — `// Dart exports:`,
+`// Flutter exports:`, `// Package exports:`, `// Project exports:` and
+`// Test exports:`. Custom import tiers apply to exports as well.
+
+It is **off by default** on purpose: enabled everywhere, it would rewrite the
+barrel file of every existing project on the first run. Barrels are also where
+it pays off — a `lib/index.dart` in a large app, or a generated `database.dart`
+with hundreds of `export` lines, is the one file no formatter orders for you.
+
+### Before
+
+```dart
+export 'src/widgets/button.dart';
+export 'package:acme_shared/utils.dart';
+export 'dart:async' show Future;
+export 'src/models/user.dart';
+export 'package:flutter/material.dart';
+```
+
+### After
+
+```dart
+// Dart exports:
+export 'dart:async' show Future;
+
+// Flutter exports:
+export 'package:flutter/material.dart';
+
+// Package exports:
+export 'package:acme_shared/utils.dart';
+
+// Project exports:
+export 'src/models/user.dart';
+export 'src/widgets/button.dart';
+```
+
 ## Grouping project imports by folder
 
 Pass `--group-by-folder` (or set `group_project_by_folder: true`) to visually
@@ -214,6 +265,64 @@ import 'package:myapp/data/user_service.dart';
 
 import 'package:myapp/ui/home_page.dart';
 import 'package:myapp/ui/settings_page.dart';
+```
+
+## Limiting the folder grouping depth
+
+`--group-by-folder` breaks project imports at **every** folder change, because
+the grouping key is the whole folder path. Pass `--group-by-folder-depth=<n>`
+(or set `group_project_by_folder_depth: <n>`) to count only the first `n` folder
+segments after the package root. **Any value above `0` already enables folder
+grouping** — you do not need to pass `--group-by-folder` as well.
+
+For `package:myapp/features/orders/presentation/widgets/order_card.dart` the
+grouping key is:
+
+| Depth | Key |
+|---|---|
+| `0` (default) | `package:myapp/features/orders/presentation/widgets` — the whole path |
+| `1` | `package:myapp/features` |
+| `2` | `package:myapp/features/orders` |
+
+This exists because of feature-first / Clean Architecture layouts. There,
+`--group-by-folder` on its own splits a file with 25 project imports into about
+a dozen groups of one or two lines each, which is noise rather than structure.
+At depth `1` the groups match the architecture instead: one `core/`, one
+`components/`, one `features/`, one `providers/`.
+
+### `--group-by-folder` (depth `0`)
+
+```dart
+// Project imports:
+import 'package:myapp/components/app_button.dart';
+
+import 'package:myapp/core/theme/app_theme.dart';
+
+import 'package:myapp/core/util/format_utils.dart';
+
+import 'package:myapp/features/orders/domain/order.dart';
+
+import 'package:myapp/features/orders/presentation/order_page.dart';
+
+import 'package:myapp/features/orders/presentation/widgets/order_card.dart';
+
+import 'package:myapp/providers/session_provider.dart';
+```
+
+### `--group-by-folder-depth=1`
+
+```dart
+// Project imports:
+import 'package:myapp/components/app_button.dart';
+
+import 'package:myapp/core/theme/app_theme.dart';
+import 'package:myapp/core/util/format_utils.dart';
+
+import 'package:myapp/features/orders/domain/order.dart';
+import 'package:myapp/features/orders/presentation/order_page.dart';
+import 'package:myapp/features/orders/presentation/widgets/order_card.dart';
+
+import 'package:myapp/providers/session_provider.dart';
 ```
 
 ## Matching `dart format` (Dart 3.13+)
@@ -272,6 +381,42 @@ tidy_imports:
       pattern: "package:mockito"
 ```
 
+## Multi-line and commented imports
+
+A directive does not have to be one clean line to be sorted. There is nothing to
+turn on here — these are all recognised, classified and sorted like any other
+import:
+
+- **Imports that `dart format` wrapped onto two lines**, usually because of a
+  long `show` or `as` clause. They used to be missed entirely, sliding out of
+  the sorted block and ending up loose below the groups:
+
+  ```dart
+  import 'package:flutter_riverpod/flutter_riverpod.dart'
+      show Consumer, ProviderContainer;
+  ```
+
+  The same goes for conditional imports (`if (dart.library.io)`), which
+  previously landed outside every group.
+
+- **Imports with a trailing line comment.** They used to be ejected from the
+  sorted block; now they are sorted normally and the comment stays on the same
+  line:
+
+  ```dart
+  import 'package:app/x.dart'; // ignore-me: documented reason
+  ```
+
+- **`// ignore:` comments above an import travel with it.** Sorting used to tear
+  the comment off its import and leave it below the block, silently switching
+  the lint suppression off. `// ignore_for_file:` applies to the whole file, so
+  it stays where it is, at the top.
+
+Classification also reads the **import URI**, not the raw text of the line. A
+line such as `import 'package:http/http.dart'; // uses dart:io underneath` used
+to be filed under **Dart imports** because of the word in the comment; it now
+goes to **Package imports**, where it belongs.
+
 ## CI Integration
 
 ### GitHub Actions
@@ -321,10 +466,16 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Custom import tiers | Not available | Available |
 | Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
 | Group project imports by folder | Not available | `--group-by-folder` |
+| Folder grouping depth | Not available | `--group-by-folder-depth=<n>` |
 | Separate group for test doubles | Not available | `--test-imports` |
+| Sort `export` directives | Not available | `--sort-exports` |
 | `dart format` 3.13+ import sections | Fights the formatter | `--separate-relative-imports` |
 | Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
 | Group comments inside string literals | Silently deleted | Preserved |
+| Multi-line imports (wrapped `show`/`as`) | Dropped out of the sorted block | Sorted like any other import |
+| Trailing comment on an import | Ejected the import from the block | Sorted, comment kept on the line |
+| `// ignore:` above an import | Detached from its import | Travels with the import |
+| Import classification | Reads the raw line, comments included | Reads the import URI |
 | Standalone config file | Not available | `tidy_imports.yaml` |
 | Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
 | `--exit-if-changed` in CI | Aborts on first unsorted file | Reports every unsorted file |

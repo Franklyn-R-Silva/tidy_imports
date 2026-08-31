@@ -37,6 +37,16 @@ class TidyConfig {
   final List<String> ignoredFiles;
   final List<CustomTier> customTiers;
 
+  /// Whether `export` directives are sorted into their own block. Opt-in: on
+  /// by default it would rewrite the barrel file of every existing project.
+  final bool sortExports;
+
+  /// How many folder segments — counted after the package root — the project
+  /// group is broken up by. 0 keeps the whole path, which is the original
+  /// behaviour of [groupProjectByFolder]. Any value above 0 also switches
+  /// that grouping on, since setting a depth is asking for it.
+  final int groupProjectByFolderDepth;
+
   const TidyConfig({
     required this.emojis,
     required this.noComments,
@@ -48,6 +58,8 @@ class TidyConfig {
     this.separateRelativeImports = false,
     this.testImports = false,
     this.testImportPrefixes = defaultTestImportPrefixes,
+    this.sortExports = false,
+    this.groupProjectByFolderDepth = 0,
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -119,6 +131,9 @@ class TidyConfig {
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
       ignoredFiles: ignored,
       customTiers: tiers,
+      sortExports: config['sort_exports'] as bool? ?? false,
+      groupProjectByFolderDepth:
+          config['group_project_by_folder_depth'] as int? ?? 0,
     );
   }
 }

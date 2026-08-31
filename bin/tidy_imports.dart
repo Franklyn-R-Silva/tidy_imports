@@ -24,7 +24,9 @@ void main(List<String> args) {
     ..addFlag('no-comments', negatable: false)
     ..addFlag('no-blank-lines', negatable: false)
     ..addFlag('sort-pubspec', negatable: false)
+    ..addFlag('sort-exports', negatable: false)
     ..addFlag('group-by-folder', negatable: false)
+    ..addOption('group-by-folder-depth', valueHelp: 'n')
     ..addFlag('separate-relative-imports', negatable: false)
     ..addFlag('test-imports', negatable: false)
     ..addFlag('dry-run', negatable: false);
@@ -70,8 +72,26 @@ void main(List<String> args) {
   final noBlankLines =
       config.noBlankLines || argResults['no-blank-lines'] == true;
   final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
+  final sortExports = config.sortExports || argResults['sort-exports'] == true;
   final groupByFolder =
       config.groupProjectByFolder || argResults['group-by-folder'] == true;
+
+  // A depth is a count of folder segments, so anything but a non-negative
+  // integer is a user error — reported the way a bad file pattern is, not as
+  // a stack trace.
+  final depthArg = argResults['group-by-folder-depth'] as String?;
+  var groupByFolderDepth = config.groupProjectByFolderDepth;
+  if (depthArg != null) {
+    final parsed = int.tryParse(depthArg);
+    if (parsed == null || parsed < 0) {
+      stderr.writeln(
+        'Error: --group-by-folder-depth expects a non-negative integer, '
+        'got "$depthArg".',
+      );
+      exit(1);
+    }
+    groupByFolderDepth = parsed;
+  }
   final separateRelativeImports = config.separateRelativeImports ||
       argResults['separate-relative-imports'] == true;
   final testImports = config.testImports || argResults['test-imports'] == true;
@@ -138,6 +158,8 @@ void main(List<String> args) {
       testImports: testImports,
       testImportPrefixes: config.testImportPrefixes,
       separateRelativeImports: separateRelativeImports,
+      sortExports: sortExports,
+      groupProjectByFolderDepth: groupByFolderDepth,
     );
     if (!result.updated) continue;
 

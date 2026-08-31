@@ -16,7 +16,7 @@
 ///
 /// See the [README](https://github.com/Franklyn-R-Silva/tidy_imports) for
 /// full documentation and configuration options.
-library tidy_imports;
+library;
 
 export 'config.dart' show TidyConfig, CustomTier;
 export 'src/version.dart' show packageVersion, packageName;
