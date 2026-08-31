@@ -41,7 +41,16 @@ void outputHelp() {
   stdout
       .writeln('      --sort-pubspec     Also sort pubspec.yaml dependencies.');
   stdout.writeln(
+      '      --sort-exports     Also sort export directives into their own');
+  stdout.writeln('                         block, placed after the imports.');
+  stdout.writeln(
       '      --group-by-folder  Separate project imports by subfolder.');
+  stdout.writeln('      --group-by-folder-depth=<n>');
+  stdout.writeln(
+      '                         Folder segments to group project imports by');
+  stdout.writeln(
+      '                         (0 = whole path). Any value above 0 also');
+  stdout.writeln('                         enables --group-by-folder.');
   stdout.writeln(
       '      --test-imports     Group project test doubles (fake_/mock_)');
   stdout.writeln('                         under their own "Test imports:".');
@@ -55,5 +64,7 @@ void outputHelp() {
   stdout.writeln('  dart run tidy_imports --dry-run');
   stdout.writeln('  dart run tidy_imports lib/main.dart lib/app.dart');
   stdout.writeln('  dart run tidy_imports "lib/*"');
+  stdout.writeln(
+      '  dart run tidy_imports --sort-exports --group-by-folder-depth=1');
   exit(0);
 }

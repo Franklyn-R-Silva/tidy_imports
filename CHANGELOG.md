@@ -1,3 +1,65 @@
+## [1.4.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.3.0...v1.4.0) (2026-08-31)
+
+Directives are now read as directives, not as lines that happen to look like
+one. That single change closes three ways an import could silently fall out of
+the sorted block, and it is what makes sorting `export` possible at all.
+
+### Features
+
+- **`--sort-exports`** (`sort_exports: true`) — sort `export` directives into
+  their own block, placed after the imports, with the same grouping the imports
+  get: `// Dart exports:`, `// Flutter exports:`, `// Package exports:`,
+  `// Project exports:`. Custom tiers apply too. Opt-in on purpose — on by
+  default it would rewrite the barrel file of every existing project.
+- **`--group-by-folder-depth=<n>`** (`group_project_by_folder_depth: n`) — cap
+  how many folder segments `--group-by-folder` groups by, counted after the
+  package root. On its own, `--group-by-folder` breaks a file with 25 project
+  imports into a dozen groups of one or two lines; `depth: 1` gives you the
+  architecture instead — one `core/` group, one `components/`, one `features/`.
+  Any value above `0` switches the grouping on by itself.
+
+### Fixes
+
+- **Multi-line directives are sorted.** A directive had to fit on a single line
+  ending in `;` to be recognised at all. An import that `dart format` wrapped
+  because of a long `show`/`as` clause failed that test, fell through to the
+  "not an import" branch, and was left below the sorted block — in the wrong
+  group, or in no group at all. Conditional imports (`if (dart.library.io)`)
+  were in the same boat.
+- **A trailing line comment no longer ejects its import.**
+  `import 'package:app/x.dart'; // reason` is sorted like any other, and the
+  comment stays on the line.
+- **`// ignore:` travels with the directive below it.** It used to be torn off
+  and dropped after the import block, which silently switches the lint
+  suppression off. `// ignore_for_file:` is deliberately left where it is: it
+  applies to the whole file, not to the line under it.
+- **Directives are classified by their URI, not by the raw line text.**
+  `import 'package:http/http.dart'; // wraps dart:io sockets` used to land in
+  **Dart imports** because the line contained `dart:`. It now lands in
+  **Package imports**.
+
+### Tests
+
+- `test/directives_test.dart` — 29 tests over the scanner: wrapped and
+  conditional directives, trailing comments, `// ignore:` pragmas, export
+  sorting and folder depth, each group carrying an idempotency case.
+
+### Chores
+
+- `lints` 4 → 6, `issue_tracker` in `pubspec.yaml`, and a `.pubignore` that
+  keeps `test/`, `tool/` and the release plumbing out of the published tarball
+  (29 KB → 22 KB).
+- Changelog sections reordered newest-first. 1.2.0 had been sitting above
+  1.3.0, so pub.dev was rendering the wrong version as the latest.
+
+## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
+
+
+### Features
+
+* add --separate-relative-imports for dart format 3.13+ interop ([5ebf3f0](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ebf3f095ac02149ecdcf67810e96076e371f7a6))
+* add --separate-relative-imports for dart format 3.13+ interop ([2bd19f9](https://github.com/Franklyn-R-Silva/tidy_imports/commit/2bd19f9b03bdcaa2a139ab1a63968585b57a6417))
+
 ## 1.2.0
 
 A dedicated group for test doubles, plus two fixes — one of which prevented
@@ -47,14 +109,6 @@ silent file corruption.
 - `CLAUDE.md` for AI-assisted contributions.
 - Corrected the claim that the CLI reads the generated `lib/src/build_info.dart`
   — it does not; `--version` prints the constant in `lib/src/version.dart`.
-
-## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
-
-
-### Features
-
-* add --separate-relative-imports for dart format 3.13+ interop ([5ebf3f0](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ebf3f095ac02149ecdcf67810e96076e371f7a6))
-* add --separate-relative-imports for dart format 3.13+ interop ([2bd19f9](https://github.com/Franklyn-R-Silva/tidy_imports/commit/2bd19f9b03bdcaa2a139ab1a63968585b57a6417))
 
 ## 1.1.0
 

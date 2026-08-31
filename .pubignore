@@ -1,0 +1,30 @@
+# Files kept out of the tarball published to pub.dev.
+#
+# Note: a .pubignore in a directory REPLACES the .gitignore of that same
+# directory for publishing purposes. That is why the root .gitignore rules are
+# repeated below — without them, local artifacts (the generated build_info.dart,
+# pubspec.lock, .dart_tool/) would find their way back into the package.
+
+# --- Development and release: irrelevant to anyone consuming the package ---
+test/
+tool/
+release-please-config.json
+.release-please-manifest.json
+.pre-commit-hooks.yaml
+CLAUDE.md
+
+# --- Mirror of the root .gitignore (see the note above) ---
+# Dart
+.dart_tool/
+lib/src/build_info.dart
+.packages
+build/
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
