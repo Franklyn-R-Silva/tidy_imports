@@ -82,6 +82,14 @@ Run modes
       --exit-if-changed          Exit 1 if anything is unsorted — or, with
                                  --report, on any finding. For CI.
       --ignore-config            Ignore tidy_imports.yaml and the pubspec block.
+      --strict-config            Exit 1 on a configuration problem instead of
+                                 warning about it. Either way it is reported:
+                                 an unknown or misspelled option, a value of
+                                 the wrong type, or a standalone
+                                 tidy_imports.yaml written in the pubspec shape
+                                 — options wrapped in a `tidy_imports:` key,
+                                 which is read from there but does not belong
+                                 there. For CI.
   -h, --help                     Show this message.
   -v, --version                  Show the version.
 

@@ -692,4 +692,163 @@ test_import_prefixes:
       expect(config.separateRelativeImports, isTrue);
     });
   });
+
+  group('config diagnostics', () {
+    test('a standalone file wrapped in tidy_imports: still configures', () {
+      final config = TidyConfig.fromStandalone(
+        loadYaml('''
+tidy_imports:
+  emojis: true
+'''),
+      );
+
+      expect(
+        config.emojis,
+        isTrue,
+        reason: 'the envelope is the pubspec shape. Read as a standalone file '
+            'it used to make every key invisible, so the whole config was '
+            'discarded and the run silently fell back to defaults',
+      );
+    });
+
+    test('the envelope is reported, not swallowed', () {
+      final config = TidyConfig.fromStandalone(
+        loadYaml('''
+tidy_imports:
+  emojis: true
+'''),
+      );
+
+      expect(config.issues, hasLength(1));
+      expect(config.issues.single, contains('tidy_imports:'));
+    });
+
+    test('a standalone file written at the top level reports nothing', () {
+      final config = TidyConfig.fromStandalone(loadYaml('emojis: true'));
+
+      expect(config.emojis, isTrue);
+      expect(config.issues, isEmpty);
+    });
+
+    test('the envelope beside another key is not unwrapped', () {
+      final config = TidyConfig.fromStandalone(
+        loadYaml('''
+tidy_imports:
+  emojis: true
+flat: true
+'''),
+      );
+
+      expect(
+        config.emojis,
+        isFalse,
+        reason: 'a key that sits beside real options is not an envelope; '
+            'guessing which half to read would be worse than saying so',
+      );
+      expect(config.flat, isTrue);
+      expect(config.issues.single, contains('tidy_imports'));
+    });
+
+    test('an unknown key is named, not ignored', () {
+      final config = TidyConfig.fromYaml(loadYaml('banana: true'));
+
+      expect(config.issues, hasLength(1));
+      expect(config.issues.single, contains('banana'));
+    });
+
+    test('a near miss suggests the option it almost is', () {
+      final config = TidyConfig.fromYaml(loadYaml('sort_export: true'));
+
+      expect(
+        config.issues.single,
+        contains('sort_exports'),
+        reason: 'naming the typo is a warning; naming the fix is a repair',
+      );
+    });
+
+    test('every option the reader supports passes without a word', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('''
+emojis: false
+comments: true
+blank_lines: true
+sort_pubspec: false
+group_project_by_folder: false
+group_project_by_folder_depth: 0
+separate_relative_imports: true
+test_imports: false
+test_import_prefixes:
+  - fake_
+ignored_files:
+  - \\.g\\.dart\$
+report_roots:
+  - /lib/app/bootstrap.dart
+tiers:
+  - name: "Company imports:"
+    pattern: "package:acme_"
+sort_exports: false
+remove_duplicates: false
+remove_unused: false
+flat: false
+relative_imports: false
+attach_comments: false
+'''),
+      );
+
+      expect(
+        config.issues,
+        isEmpty,
+        reason: 'this is the list drifting from the reader: add an option to '
+            'one and not the other and a valid config starts warning',
+      );
+    });
+
+    test('a boolean option given a string reports instead of crashing', () {
+      final config = TidyConfig.fromYaml(loadYaml('emojis: "sim"'));
+
+      expect(
+        config.emojis,
+        isFalse,
+        reason: 'the cast used to throw a bare TypeError that named no key, '
+            'so the one thing the user needed to know was the one thing the '
+            'crash left out',
+      );
+      expect(config.issues.single, contains('emojis'));
+      expect(config.issues.single, contains('boolean'));
+    });
+
+    test('a numeric option given a string reports instead of crashing', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('group_project_by_folder_depth: "two"'),
+      );
+
+      expect(config.groupProjectByFolderDepth, 0);
+      expect(config.issues.single, contains('group_project_by_folder_depth'));
+    });
+
+    test('a list option given a scalar reports instead of crashing', () {
+      final config = TidyConfig.fromYaml(loadYaml('ignored_files: nope'));
+
+      expect(config.ignoredFiles, isEmpty);
+      expect(config.issues.single, contains('ignored_files'));
+    });
+
+    test('a tier that is not a map reports instead of crashing', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('''
+tiers:
+  - nope
+'''),
+      );
+
+      expect(config.customTiers, isEmpty);
+      expect(config.issues.single, contains('tiers'));
+    });
+
+    test('a config file that is not a map at all reports', () {
+      final config = TidyConfig.fromStandalone(loadYaml('hello'));
+
+      expect(config.issues.single, contains('map'));
+    });
+  });
 }

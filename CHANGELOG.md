@@ -1,3 +1,50 @@
+## 2.4.0 (2026-09-18)
+
+A configuration could fail without saying anything.
+
+A standalone `tidy_imports.yaml` written in the `pubspec.yaml` shape — every
+option wrapped in a `tidy_imports:` key — parsed cleanly, matched no key the
+reader looks for, and was replaced by the defaults. No error, no warning: the
+run reported success while doing the opposite of what the file said. It was
+found on a project whose `ignored_files` was supposed to keep a 555-file
+generated SDK out of the scan; the file had been inert for weeks, and the only
+symptom was a file count nobody had reason to question.
+
+Unknown keys were the same silence with a smaller blast radius: `sort_export`
+for `sort_exports` simply did not exist, and neither did the behaviour asked
+for. Values of the wrong type were the opposite failure — `emojis: "yes"` threw
+`type 'String' is not a subtype of type 'bool?' in type cast`, which is loud
+but names no key, so the one fact needed to fix it was the one left out.
+
+All three now produce a sentence naming the key, and a near miss names the
+option it was probably meant to be. The envelope is read rather than refused,
+so no existing project breaks on upgrade — it is reported, not obeyed in
+silence. `--strict-config` turns every one of them into an error and exits
+before the first file is touched, for CI, where a warning nobody reads is the
+same as no warning at all.
+
+### Features
+
+* `--strict-config`: exit 1 on a configuration problem instead of warning
+* `TidyConfig.issues` carries what was wrong with a config, so `lib/` reports
+  it as data and `bin/` stays the only place that prints
+* `TidyConfig.fromStandalone` reads a standalone config file, unwrapping the
+  `tidy_imports:` envelope and reporting it
+
+### Bug fixes
+
+* a standalone `tidy_imports.yaml` in the pubspec shape configured nothing, in
+  silence — it now configures, and says so
+* an unknown or misspelled option is named instead of dropped
+* a value of the wrong type — including a malformed `tiers` entry, or a file
+  that is not a map at all — is reported instead of throwing a bare `TypeError`
+
+### Docs
+
+* `example/example.dart` now runs one demonstration per option — the twelve
+  shapes `sortImports` takes, plus `sortPubspec`, the graph behind `--report`,
+  the path helpers, and a config being read and criticised
+
 ## 2.3.0 (2026-09-18)
 
 `--attach-comments` / `attach_comments:`, off by default, keeps a `//` note
