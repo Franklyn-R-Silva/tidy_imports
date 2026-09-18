@@ -12,3 +12,8 @@ pubspec.lock
 
 # macOS
 .DS_Store
+
+# Coverage
+.coverage/
+coverage/
+lcov.info

@@ -1,0 +1,22 @@
+name: publish
+
+# Publishes to pub.dev when Release Please pushes a vX.Y.Z tag, using OIDC —
+# no long-lived token lives in this repository.
+#
+# ONE-TIME SETUP, on the package's Admin tab at pub.dev:
+#   Automated publishing -> Enable publishing from GitHub Actions
+#     Repository:   Franklyn-R-Silva/tidy_imports
+#     Tag pattern:  v{{version}}
+#
+# Until that is switched on, this job fails with a permission error and
+# nothing is published; `dart pub publish` by hand still works.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+jobs:
+  publish:
+    permissions:
+      id-token: write # Required to mint the OIDC token pub.dev verifies.
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1

@@ -25,45 +25,52 @@ Map<String, File> dartFiles(String currentPath, List<String> args) {
     }
   }
 
-  // Filter to only the files/patterns passed as positional args (if any)
-  var onlyCertainFiles = false;
-  for (final arg in args) {
-    if (!onlyCertainFiles) {
-      onlyCertainFiles = arg.endsWith('dart');
+  // Filter down to the patterns passed as positional args, if any were.
+  //
+  // This used to activate only when some argument ended in the literal text
+  // `dart`, so `tidy_imports "lib/src/*"` — an example from the tool's own
+  // help — silently sorted the whole project instead of that folder. Any
+  // positional argument is a filter now.
+  final patterns = args.where((arg) => !arg.startsWith('-')).toList();
+  if (patterns.isEmpty) return dartFiles;
+
+  final matchers = compilePatterns(patterns, 'file pattern');
+  final filesToKeep = <String, File>{};
+  for (final fileName in dartFiles.keys) {
+    for (final matcher in matchers) {
+      if (matcher.hasMatch(toPosix(fileName))) {
+        filesToKeep[fileName] = dartFiles[fileName]!;
+        break;
+      }
     }
   }
+  return filesToKeep;
+}
 
-  if (onlyCertainFiles) {
-    final patterns = args.where((arg) => !arg.startsWith('-'));
-    final filesToKeep = <String, File>{};
+/// [path] with Windows separators rewritten as `/`.
+///
+/// Patterns are written with forward slashes — the README, the help text and
+/// every example use them — but `Directory.listSync` hands back `\` on
+/// Windows, so `lib/src/` matched nothing there. Normalising the path, not the
+/// pattern, keeps one pattern working on every platform.
+String toPosix(String path) => path.replaceAll('\\', '/');
 
-    // Compile once, up front, so an invalid pattern fails immediately with a
-    // message naming it instead of a raw RegExp error mid-scan.
-    final matchers = <RegExp>[];
-    for (final pattern in patterns) {
-      try {
-        matchers.add(RegExp(pattern));
-      } on FormatException catch (e) {
-        throw FormatException('invalid file pattern "$pattern": ${e.message}');
-      }
+/// Compiles [patterns] as regular expressions, up front.
+///
+/// Compiling early means a malformed pattern fails with a message naming it
+/// and [label], instead of a raw `RegExp` error thrown mid-scan — and means
+/// each pattern is compiled once rather than once per file. Throws a
+/// [FormatException]; callers report it and exit.
+List<RegExp> compilePatterns(Iterable<String> patterns, String label) {
+  final matchers = <RegExp>[];
+  for (final pattern in patterns) {
+    try {
+      matchers.add(RegExp(pattern));
+    } on FormatException catch (e) {
+      throw FormatException('invalid $label "$pattern": ${e.message}');
     }
-
-    for (final fileName in dartFiles.keys) {
-      var keep = false;
-      for (final matcher in matchers) {
-        if (matcher.hasMatch(fileName)) {
-          keep = true;
-          break;
-        }
-      }
-      if (keep) {
-        filesToKeep[fileName] = File(fileName);
-      }
-    }
-    return filesToKeep;
   }
-
-  return dartFiles;
+  return matchers;
 }
 
 List<FileSystemEntity> _readDir(String currentPath, String name) {

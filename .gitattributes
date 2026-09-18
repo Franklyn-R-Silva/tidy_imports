@@ -1,0 +1,9 @@
+# One line ending everywhere: LF in the repository and in the working tree.
+#
+# Without this, a Windows checkout gets CRLF while any tool that rewrites a
+# file — a formatter, a codegen step, tidy_imports itself — writes LF, and
+# every diff fills up with whole-file changes that are really just \r.
+#
+# It does not change what tidy_imports does to *your* files: the CLI detects
+# each file's existing ending and puts it back.
+* text=auto eol=lf

@@ -418,6 +418,180 @@ void main() {}
     });
   });
 
+  group('comments and string literals', () {
+    test('an import inside a block comment stays commented out', () {
+      final lines = [
+        "import 'package:demo/b.dart';",
+        '',
+        '/*',
+        "import 'package:demo/disabled.dart';",
+        '*/',
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+import 'package:demo/b.dart';
+
+/*
+import 'package:demo/disabled.dart';
+*/
+
+void main() {}
+''',
+      );
+    });
+
+    test('block comments nest, so the inner close does not reopen code', () {
+      final lines = [
+        "import 'package:demo/b.dart';",
+        '',
+        '/* outer',
+        '/* inner */',
+        "import 'package:demo/still_disabled.dart';",
+        '*/',
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        contains(
+            "/* outer\n/* inner */\nimport 'package:demo/still_disabled.dart';\n*/"),
+      );
+    });
+
+    test('a group header inside a block comment is not stripped', () {
+      final lines = [
+        "import 'package:demo/b.dart';",
+        '',
+        '/*',
+        '// Project imports:',
+        "import 'package:demo/disabled.dart';",
+        '*/',
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(result.sortedFile, contains('/*\n// Project imports:\n'));
+    });
+
+    test('an import inside a raw triple-quoted string is left alone', () {
+      // Built from a constant instead of written inline: a literal triple
+      // quote inside a triple-quoted fixture has to be escaped, and the escape
+      // is easy to break.
+      const tq = "'''";
+      final lines = [
+        "import 'package:demo/b.dart';",
+        '',
+        'void main() {',
+        '  const sql = r$tq',
+        "import 'package:demo/inside_string.dart';",
+        '$tq;',
+        '  print(sql);',
+        '}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        contains(
+          "  const sql = r$tq\nimport 'package:demo/inside_string.dart';\n$tq;",
+        ),
+        reason: 'the import inside the string must not move',
+      );
+      expect(
+        result.sortedFile,
+        isNot(contains("import 'package:demo/inside_string.dart';\n\n")),
+        reason: 'and must not be hoisted into the sorted block',
+      );
+    });
+
+    test('a // comment never opens a block comment', () {
+      final lines = [
+        '// mind the /* in this sentence',
+        "import 'package:demo/z.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+// mind the /* in this sentence
+
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('a /* */ in a string does not swallow the rest of the file', () {
+      final lines = [
+        "import 'package:demo/z.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {',
+        "  print('a /* b');",
+        '}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        startsWith("// Dart imports:\nimport 'dart:io';"),
+      );
+    });
+
+    test('directives after a closed block comment are still sorted', () {
+      final lines = [
+        '/* header',
+        '   spanning lines */',
+        "import 'package:demo/z.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+/* header
+   spanning lines */
+
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart';
+
+void main() {}
+''',
+      );
+    });
+  });
+
   group('sort exports (--sort-exports)', () {
     test('is off by default', () {
       final lines = [

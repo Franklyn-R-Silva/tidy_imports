@@ -1,6 +1,3 @@
-// Dart imports:
-import 'dart:io';
-
 // Project imports:
 import 'package:tidy_imports/config.dart';
 
@@ -21,13 +18,23 @@ const _maxDirectiveLines = 24;
 /// Sort the imports of a dart file.
 ///
 /// Returns [ImportSortData] containing the sorted file content and whether
-/// any changes were made.
+/// any changes were made. Pure: it reads nothing, writes nothing, and never
+/// terminates the process — what an unsorted file means is the caller's call.
 ImportSortData sortImports(
   List<String> lines,
   String packageName,
   bool emojis,
+  @Deprecated(
+    'Has no effect since 1.4.2: lib/ no longer calls exit(). bin/ checks the '
+    'whole project and fails once, so every unsorted file gets reported '
+    '(import_sorter#87). Will be removed in 2.0.0.',
+  )
   bool exitIfChanged,
   bool noComments, {
+  @Deprecated(
+    'Has no effect since 1.4.2; it only ever fed the message the removed '
+    'exit() printed. Will be removed in 2.0.0.',
+  )
   String? filePath,
   bool noBlankLines = false,
   List<CustomTier> customTiers = const [],
@@ -112,21 +119,20 @@ ImportSortData sortImports(
     }
   }
 
-  var isMultiLineString = false;
+  final scanner = _SourceScanner();
   var order = 0;
   var index = 0;
 
   while (index < lines.length) {
     final line = lines[index];
 
-    if (_timesContained(line, "'''") == 1 ||
-        _timesContained(line, '"""') == 1) {
-      isMultiLineString = !isMultiLineString;
-    }
-
-    if (!isMultiLineString) {
+    // Only a line that *begins* in executable code can be a directive or a
+    // header of ours. Inside a string literal or a `/* */` block it is text,
+    // and moving it would change what the file means.
+    if (scanner.startsInCode) {
       // A header we wrote on an earlier run: drop it, the emitter re-adds it.
       if (strippable.contains(line) && directiveFollows(index + 1)) {
+        scanner.consume(line);
         index++;
         continue;
       }
@@ -148,6 +154,11 @@ ImportSortData sortImports(
               _Directive(lines.sublist(index, start), body, uri, order++),
               isExport: body.first.startsWith('export '),
             );
+            // A directive can carry a `/*` or a string of its own, so the
+            // scanner has to walk the lines the loop skips over.
+            for (var i = index; i < start + span; i++) {
+              scanner.consume(lines[i]);
+            }
             index = start + span;
             continue;
           }
@@ -156,6 +167,7 @@ ImportSortData sortImports(
     }
 
     (noDirectives() ? beforeLines : afterLines).add(line);
+    scanner.consume(line);
     index++;
   }
 
@@ -298,23 +310,12 @@ ImportSortData sortImports(
   final sortedFile = sortedLines.join('\n');
   final original = '${lines.join('\n')}\n';
 
-  if (exitIfChanged && original != sortedFile) {
-    if (filePath != null) {
-      stdout
-          .writeln('\n┗━━🚨 File $filePath does not have its imports sorted.');
-    }
-    exit(1);
-  }
-
   if (original == sortedFile) {
     return ImportSortData(original, false);
   }
 
   return ImportSortData(sortedFile, true);
 }
-
-int _timesContained(String string, String looking) =>
-    string.split(looking).length - 1;
 
 /// Matches the quoted URI of a directive.
 final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
@@ -430,6 +431,110 @@ CustomTier? _matchTier(String code, List<CustomTier> tiers) {
     if (code.contains(tier.pattern)) return tier;
   }
   return null;
+}
+
+/// Tracks, line by line, whether the source has left executable code.
+///
+/// A line is only a directive — or a group header of ours — when it *begins*
+/// in code. Anything inside a string literal or a `/* */` block is text, and
+/// hoisting it out of there rewrites what the file means: a commented-out
+/// import used to come back to life, and a group comment inside a string used
+/// to be stripped.
+///
+/// Known limit: a quote nested inside a `${...}` interpolation can end the
+/// string early here. It costs nothing unless that line also opens a block
+/// comment that never closes, and it is strictly less wrong than the single
+/// toggle this replaced.
+class _SourceScanner {
+  /// Delimiter of a triple-quoted string an earlier line left open.
+  String? _openString;
+
+  /// Nesting depth of `/* … */`. Dart block comments nest, so a plain
+  /// "look for the next `*/`" closes one level too early.
+  int _commentDepth = 0;
+
+  /// Whether the next line to be consumed begins in executable code.
+  bool get startsInCode => _openString == null && _commentDepth == 0;
+
+  /// Advances the state past [line].
+  void consume(String line) {
+    var i = 0;
+    while (i < line.length) {
+      final open = _openString;
+      if (open != null) {
+        final end = line.indexOf(open, i);
+        if (end < 0) return; // The string runs on into the next line.
+        i = end + open.length;
+        _openString = null;
+        continue;
+      }
+
+      if (_commentDepth > 0) {
+        final close = line.indexOf('*/', i);
+        final nested = line.indexOf('/*', i);
+        if (nested >= 0 && (close < 0 || nested < close)) {
+          _commentDepth++;
+          i = nested + 2;
+          continue;
+        }
+        if (close < 0) return; // The comment runs on into the next line.
+        _commentDepth--;
+        i = close + 2;
+        continue;
+      }
+
+      final char = line[i];
+      if (char == '/' && i + 1 < line.length) {
+        final next = line[i + 1];
+        if (next == '/') return; // Rest of the line is a comment.
+        if (next == '*') {
+          _commentDepth++;
+          i += 2;
+          continue;
+        }
+      }
+
+      if (char == "'" || char == '"') {
+        final triple = char * 3;
+        if (line.startsWith(triple, i)) {
+          _openString = triple;
+          i += 3;
+          continue;
+        }
+        i = _skipString(line, i, char, raw: _isRawPrefix(line, i));
+        continue;
+      }
+
+      i++;
+    }
+  }
+}
+
+/// Whether the quote at [quoteIndex] is preceded by the `r` of a raw string,
+/// rather than by an identifier that merely ends in `r`.
+bool _isRawPrefix(String line, int quoteIndex) {
+  if (quoteIndex == 0 || line[quoteIndex - 1] != 'r') return false;
+  if (quoteIndex == 1) return true;
+  final before = line[quoteIndex - 2];
+  return !RegExp(r'[A-Za-z0-9_$]').hasMatch(before);
+}
+
+/// The index just past the single-line string opening at [start], or the end
+/// of the line when it never closes — which only happens in malformed source.
+int _skipString(String line, int start, String quote, {required bool raw}) {
+  var i = start + 1;
+  while (i < line.length) {
+    final char = line[i];
+    // A backslash escapes the next character, except in a raw string, where
+    // it is just a backslash.
+    if (!raw && char == r'\') {
+      i += 2;
+      continue;
+    }
+    if (char == quote) return i + 1;
+    i++;
+  }
+  return i;
 }
 
 /// One `import`/`export` directive, kept whole.
