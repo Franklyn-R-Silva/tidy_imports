@@ -1065,6 +1065,281 @@ void main() {}
     });
   });
 
+  group('flat ordering (--flat)', () {
+    final mixed = [
+      "import 'package:flutter/material.dart';",
+      "import 'package:args/args.dart';",
+      "import 'dart:io';",
+      "import 'helper.dart';",
+      "import 'package:demo/app.dart';",
+      '',
+      'void main() {}',
+    ];
+
+    test('is off by default', () {
+      final result = sortImports(mixed, 'demo', false, false, false);
+
+      expect(result.sortedFile, contains('// Flutter imports:'));
+    });
+
+    test('emits dart, then package, then relative — alphabetical', () {
+      final result =
+          sortImports(mixed, 'demo', false, false, false, flat: true);
+
+      expect(
+        result.sortedFile,
+        '''
+import 'dart:io';
+import 'package:args/args.dart';
+import 'package:demo/app.dart';
+import 'package:flutter/material.dart';
+import 'helper.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('does not single out flutter, which is what breaks the lint', () {
+      final result =
+          sortImports(mixed, 'demo', false, false, false, flat: true);
+      final body = result.sortedFile;
+
+      expect(
+        body.indexOf("package:args"),
+        lessThan(body.indexOf("package:flutter")),
+        reason: 'alphabetical among package: imports, flutter included',
+      );
+    });
+
+    test('writes no group comments at all', () {
+      final result = sortImports(
+        mixed,
+        'demo',
+        true, // emojis, which would otherwise show up in the headers
+        false,
+        false,
+        flat: true,
+      );
+
+      expect(result.sortedFile, isNot(contains('//')));
+    });
+
+    test('puts exports in their own block below the imports', () {
+      final lines = [
+        "export 'package:demo/z.dart';",
+        "import 'dart:io';",
+        "export 'package:demo/a.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        flat: true,
+        sortExports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+import 'dart:io';
+
+export 'package:demo/a.dart';
+export 'package:demo/z.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('re-running a flat file makes no change', () {
+      const sorted = '''
+import 'dart:io';
+import 'package:args/args.dart';
+import 'helper.dart';
+
+void main() {}
+''';
+
+      final result = sortImports(
+        sorted.split('\n'),
+        'demo',
+        false,
+        false,
+        false,
+        flat: true,
+      );
+
+      expect(result.updated, isFalse);
+    });
+
+    test('grouping options are ignored rather than half-applied', () {
+      final result = sortImports(
+        mixed,
+        'demo',
+        false,
+        false,
+        false,
+        flat: true,
+        groupProjectByFolder: true,
+        testImports: true,
+        separateRelativeImports: true,
+      );
+
+      expect(result.sortedFile, isNot(contains('//')));
+      expect(result.sortedFile.split('\n\n').length, 2,
+          reason: 'one run of imports, then the code');
+    });
+  });
+
+  group('relative imports (--relative-imports)', () {
+    test('is off by default', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false,
+          libRelativePath: 'a.dart');
+
+      expect(
+          result.sortedFile, contains("import 'package:demo/src/foo.dart';"));
+    });
+
+    test('rewrites a package: uri as a path from this file', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(result.sortedFile, startsWith("import 'src/foo.dart';"));
+    });
+
+    test('walks up out of a sibling folder', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart';",
+        "import 'package:demo/src/p2/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'src/p2/bar.dart',
+      );
+
+      expect(result.sortedFile, contains("import '../foo.dart';"));
+      expect(result.sortedFile, contains("import 'foo.dart';"));
+    });
+
+    test('leaves another package alone', () {
+      final lines = [
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(result.sortedFile, contains("import 'package:http/http.dart';"));
+    });
+
+    test('does nothing without a path to be relative to', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+      );
+
+      expect(
+          result.sortedFile, contains("import 'package:demo/src/foo.dart';"));
+    });
+
+    test('keeps the prefix and the trailing comment', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart' as foo; // why",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("import 'src/foo.dart' as foo; // why"),
+      );
+    });
+
+    test('a rewritten uri can then be seen as a duplicate', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart';",
+        "import 'src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        removeDuplicates: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(result.duplicatesRemoved, 1);
+    });
+  });
+
   group('group_project_by_folder_depth', () {
     test('depth 0 keeps one group per full folder path', () {
       final lines = [

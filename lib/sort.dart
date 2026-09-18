@@ -28,6 +28,17 @@ const _maxDirectiveLines = 24;
 /// is a different question, one that needs a resolved element model;
 /// `dart fix --apply --code=unused_import` answers it, and the CLI's
 /// `--remove-unused` runs exactly that before sorting.
+///
+/// [flat] drops the groups entirely and emits one alphabetical run per
+/// section — `dart:`, then `package:`, then relative — which is the order the
+/// `directives_ordering` lint expects. Grouping options are ignored under it,
+/// since there are no groups left to shape (import_sorter#58, #28).
+///
+/// [relativeImports] rewrites `package:<packageName>/…` URIs as paths relative
+/// to [libRelativePath], the file's own location under `lib/`. Without that
+/// path there is nothing to be relative *to*, so the rewrite is skipped — as
+/// it is for files outside `lib/`, which cannot reach it with a relative URI
+/// at all (import_sorter#59).
 ImportSortData sortImports(
   List<String> lines,
   String packageName,
@@ -35,13 +46,14 @@ ImportSortData sortImports(
   @Deprecated(
     'Has no effect since 1.4.2: lib/ no longer calls exit(). bin/ checks the '
     'whole project and fails once, so every unsorted file gets reported '
-    '(import_sorter#87). Will be removed in 2.0.0.',
+    '(import_sorter#87). Kept through 2.0.0 so the upgrade is one change, not '
+    'two; removed in 3.0.0.',
   )
   bool exitIfChanged,
   bool noComments, {
   @Deprecated(
     'Has no effect since 1.4.2; it only ever fed the message the removed '
-    'exit() printed. Will be removed in 2.0.0.',
+    'exit() printed. Kept through 2.0.0; removed in 3.0.0.',
   )
   String? filePath,
   bool noBlankLines = false,
@@ -53,6 +65,9 @@ ImportSortData sortImports(
   bool sortExports = false,
   int groupProjectByFolderDepth = 0,
   bool removeDuplicates = false,
+  bool flat = false,
+  bool relativeImports = false,
+  String? libRelativePath,
 }) {
   // Asking for a folder depth is asking for folder grouping; requiring both
   // options only creates a way to set the depth and see nothing happen.
@@ -86,6 +101,11 @@ ImportSortData sortImports(
   final imports = _Buckets(customTiers);
   final exports = _Buckets(customTiers);
 
+  // Under [flat] there are no groups, so the buckets stay empty and everything
+  // lands in one run per directive kind.
+  final flatImports = <_Directive>[];
+  final flatExports = <_Directive>[];
+
   bool startsDirective(String line) =>
       line.startsWith('import ') || (sortExports && line.startsWith('export '));
 
@@ -99,9 +119,17 @@ ImportSortData sortImports(
     return i < lines.length && startsDirective(lines[i]);
   }
 
-  bool noDirectives() => imports.isEmpty && exports.isEmpty;
+  bool noDirectives() =>
+      imports.isEmpty &&
+      exports.isEmpty &&
+      flatImports.isEmpty &&
+      flatExports.isEmpty;
 
   void classify(_Directive directive, {required bool isExport}) {
+    if (flat) {
+      (isExport ? flatExports : flatImports).add(directive);
+      return;
+    }
     final bucket = isExport ? exports : imports;
     final uri = directive.uri;
     if (uri.startsWith('dart:')) {
@@ -126,6 +154,33 @@ ImportSortData sortImports(
     } else {
       bucket.projectRelative.add(directive);
     }
+  }
+
+  // `package:<self>/…` rewritten as a path relative to this file. Left alone
+  // when the option is off, when the file's own location is unknown, or when
+  // the URI points anywhere else — another package's `package:` URI has no
+  // relative form from here.
+  _Directive relativize(_Directive directive) {
+    final from = libRelativePath;
+    if (!relativeImports || from == null) return directive;
+
+    const scheme = 'package:';
+    final prefix = '$scheme$packageName/';
+    if (!directive.uri.startsWith(prefix)) return directive;
+
+    final relative =
+        _relativePath(from, directive.uri.substring(prefix.length));
+    if (relative == null) return directive;
+
+    return _Directive(
+      directive.leading,
+      [
+        directive.lines.first.replaceFirst(directive.uri, relative),
+        ...directive.lines.skip(1),
+      ],
+      relative,
+      directive.order,
+    );
   }
 
   // Signatures of the directives kept so far, for [removeDuplicates].
@@ -163,8 +218,12 @@ ImportSortData sortImports(
           final body = lines.sublist(start, start + span);
           final uri = _directiveUri(body.first);
           if (uri != null) {
-            final directive =
-                _Directive(lines.sublist(index, start), body, uri, order++);
+            // Rewrite first: a `package:` URI and its relative form are the
+            // same import, and only look like duplicates once both are
+            // written the same way.
+            final directive = relativize(
+              _Directive(lines.sublist(index, start), body, uri, order++),
+            );
             if (removeDuplicates && !seen.add(directive.signature)) {
               duplicatesRemoved++;
             } else {
@@ -300,8 +359,21 @@ ImportSortData sortImports(
     );
   }
 
-  emitBlock(imports, 'imports');
-  emitBlock(exports, 'exports');
+  if (flat) {
+    // `directives_ordering` wants one alphabetical run per section, exports
+    // in their own block below the imports. No headers: a comment between two
+    // runs the lint considers one section would be a lie about the structure.
+    _sortFlatly(flatImports);
+    _sortFlatly(flatExports);
+    emit(flatImports);
+    if (flatImports.isNotEmpty && flatExports.isNotEmpty && !noBlankLines) {
+      sortedLines.add('');
+    }
+    emit(flatExports);
+  } else {
+    emitBlock(imports, 'imports');
+    emitBlock(exports, 'exports');
+  }
 
   // Everything below the directive block, with the blank lines that separated
   // it from the directives dropped — the emitter re-adds exactly one.
@@ -398,6 +470,49 @@ String _stripTrailingComment(String line) {
     }
   }
   return line.trimRight();
+}
+
+/// Sorts the way `directives_ordering` reads a file: `dart:` first, then
+/// `package:`, then relative, alphabetical inside each.
+void _sortFlatly(List<_Directive> directives) {
+  directives.sort((a, b) {
+    final bySection = _section(a.uri).compareTo(_section(b.uri));
+    if (bySection != 0) return bySection;
+    final byUri = a.uri.compareTo(b.uri);
+    return byUri != 0 ? byUri : a.order.compareTo(b.order);
+  });
+}
+
+/// Which of the lint's three sections [uri] belongs to. `package:flutter/` is
+/// deliberately not special here — singling it out is exactly what makes the
+/// grouped output violate the lint.
+int _section(String uri) {
+  if (uri.startsWith('dart:')) return 0;
+  if (uri.startsWith('package:')) return 1;
+  return 2;
+}
+
+/// The path from the directory holding [from] to [to], both written with `/`
+/// and relative to `lib/`. Null when there is nothing left to point at.
+///
+/// `src/p2/bar.dart` importing `src/foo.dart` gets `../foo.dart`;
+/// `src/foo.dart` importing `src/p1/foo.dart` gets `p1/foo.dart`.
+String? _relativePath(String from, String to) {
+  final fromDir = from.split('/')..removeLast();
+  final toParts = to.split('/');
+
+  var common = 0;
+  while (common < fromDir.length &&
+      common < toParts.length - 1 &&
+      fromDir[common] == toParts[common]) {
+    common++;
+  }
+
+  final parts = [
+    ...List.filled(fromDir.length - common, '..'),
+    ...toParts.sublist(common),
+  ];
+  return parts.isEmpty ? null : parts.join('/');
 }
 
 /// Sorts by URI, falling back to the original position so equal URIs keep

@@ -136,6 +136,37 @@ Write patterns with **forward slashes on every platform**, Windows included —
 paths are normalised before matching. With no pattern, the whole project is
 sorted.
 
+## What is on by default
+
+Almost nothing. `tidy_imports` sorts and groups your imports and changes
+nothing else about the file unless you ask it to — no deleting, no rewriting,
+no touching `pubspec.yaml`.
+
+| On by default | Why |
+|---|---|
+| Group comments (`// Dart imports:` …) | The point of the tool. `--no-comments` drops them |
+| Blank line between groups | Readability. `--no-blank-lines` drops it |
+| **Blank line before relative project imports** | Not taste — see below. `--no-separate-relative-imports` drops it |
+
+Everything else — sorting exports, sorting `pubspec.yaml`, grouping by folder,
+splitting out test doubles, removing duplicates, removing unused imports, flat
+ordering, relative rewriting — is **off** until you turn it on, by flag or by
+config key. Every flag is negatable, so a config file is never the last word:
+`--no-<flag>` overrides it for one run.
+
+### Why that third one is on
+
+Since Dart 3.13, `dart format` puts a blank line between the `package:` and
+relative sections itself. With this off, `tidy_imports` removes the line and
+`dart format` puts it back, forever — every run of either tool produces a diff
+(issue #1). Turning it on by default is a bug fix wearing the clothes of a
+preference.
+
+It does nothing when you have no relative project imports, and it is suppressed
+entirely under `--no-blank-lines`. If your project pins Dart below 3.13 and you
+prefer the tighter output, `--no-separate-relative-imports` or
+`separate_relative_imports: false` restores it.
+
 ## Options
 
 | Flag | Short | Description |
@@ -143,14 +174,17 @@ sorted.
 | `--emojis` | `-e` | Add emojis to import group comments |
 | `--no-comments` | | Omit group comments entirely |
 | `--no-blank-lines` | | Omit blank lines between import groups |
+| `--blank-lines` | | Force them back on, over a config that disabled them |
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
 | `--sort-exports` | | Also sort `export` directives into their own block |
 | `--group-by-folder` | | Separate project imports by subfolder |
 | `--group-by-folder-depth=<n>` | | Folder segments to group project imports by (`0` = whole path; above `0` implies `--group-by-folder`) |
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
+| `--flat` | | One alphabetical run per section, no groups — what `directives_ordering` expects (**off by default**) |
+| `--relative-imports` | | Rewrite own-package imports as relative paths (**off by default**) |
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
-| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
+| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -191,8 +225,10 @@ tidy_imports:
   sort_exports: false    # Default: false — also sort export directives
   group_project_by_folder: false  # Default: false — split project imports by folder
   group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
-  separate_relative_imports: false  # Default: false — blank line before relative imports
+  separate_relative_imports: true   # Default: TRUE — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
+  flat: false            # Default: false — no groups, one alphabetical run per section
+  relative_imports: false   # Default: false — rewrite own-package imports as relative
   remove_duplicates: false  # Default: false — drop an import written identically twice
   remove_unused: false      # Default: false — run dart fix --code=unused_import first
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
@@ -314,6 +350,62 @@ export 'package:acme_shared/utils.dart';
 export 'src/models/user.dart';
 export 'src/widgets/button.dart';
 ```
+
+## Matching Dart's own lints
+
+Two lints in the Dart ecosystem disagree with how `tidy_imports` sorts by
+default. Both are off unless you ask, because the default output — grouped,
+labelled — is the whole point of the tool for most people.
+
+### `--flat` — for `directives_ordering`
+
+The `directives_ordering` lint wants one alphabetical run per section: `dart:`,
+then `package:`, then relative. The default grouping breaks it, because
+`package:flutter/…` is lifted above the other packages:
+
+```dart
+// default                                    // --flat
+// Dart imports:                              import 'dart:io';
+import 'dart:io';                             import 'package:args/args.dart';
+                                              import 'package:flutter/material.dart';
+// Flutter imports:                           import 'helper.dart';
+import 'package:flutter/material.dart';
+                                              // no lint warning
+// Package imports:
+import 'package:args/args.dart';
+
+//  ← Sort directive sections alphabetically
+```
+
+With `--flat` the Flutter group stops being special, the headers go away — a
+comment between two runs the lint reads as one section would be a lie about the
+structure — and `export` directives get their own block below the imports,
+which is also what the lint asks for.
+
+Grouping options (`--group-by-folder`, `--test-imports`, custom tiers) are
+ignored under `--flat`: there are no groups left for them to shape.
+
+### `--relative-imports` — for `prefer_relative_imports`
+
+Rewrites imports of your own package as paths relative to the importing file:
+
+```dart
+// in lib/src/p2/bar.dart
+import 'package:my_app/src/foo.dart';      →  import '../foo.dart';
+import 'package:my_app/src/p2/foo.dart';   →  import 'foo.dart';
+```
+
+Only files under `lib/` are touched. A file in `test/` or `bin/` cannot reach
+`lib/` with a relative URI at all, so its `package:` imports are left exactly as
+they are.
+
+Another package's imports are never rewritten, and the prefix, `show`/`hide`
+clause and trailing comment all survive the rewrite. If a rewrite happens to
+produce an import you already had, `--remove-duplicates` will fold the two.
+
+Note that `prefer_relative_imports` and `always_use_package_imports` are
+opposites — the Dart team ships both and expects you to pick one. This flag
+serves the first; leave it off for the second.
 
 ## Removing duplicate and unused imports
 
@@ -447,8 +539,10 @@ sections. Because `tidy_imports` keeps `package:<your_project>/…` and relative
 imports together in one **Project imports:** block, the two tools used to undo
 each other on every run.
 
-Pass `--separate-relative-imports` (or set `separate_relative_imports: true`) to
-emit that blank line up front, so both tools agree and the file stops flip-flopping:
+**This is on by default since 2.0.0** — it emits that blank line up front, so
+both tools agree and the file stops flip-flopping. Turn it off with
+`--no-separate-relative-imports` or `separate_relative_imports: false` if you
+prefer the tighter block and do not run `dart format`:
 
 ```dart
 // Project imports:
@@ -602,7 +696,11 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Folder grouping depth | Not available | `--group-by-folder-depth=<n>` |
 | Separate group for test doubles | Not available | `--test-imports` |
 | Sort `export` directives | Not available | `--sort-exports` |
-| `dart format` 3.13+ import sections | Fights the formatter | `--separate-relative-imports` |
+| `dart format` 3.13+ import sections | Fights the formatter | Agrees with it, by default |
+| Remove duplicate imports | Requested in #57, still open | `--remove-duplicates` |
+| Remove unused imports | Requested in #56, still open | `--remove-unused` |
+| `directives_ordering` lint | Requested in #58 / #28, still open | `--flat` |
+| Rewrite own imports as relative | Requested in #59, still open | `--relative-imports` |
 | Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
 | Group comments inside string literals | Silently deleted | Preserved |
 | Multi-line imports (wrapped `show`/`as`) | Dropped out of the sorted block | Sorted like any other import |

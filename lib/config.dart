@@ -31,6 +31,14 @@ class TidyConfig {
   final bool noBlankLines;
   final bool sortPubspec;
   final bool groupProjectByFolder;
+
+  /// Whether a blank line separates the `package:<self>/…` and relative halves
+  /// of the project group.
+  ///
+  /// **On by default**, and the only option here that is. It is not a matter of
+  /// taste: since 3.13 `dart format` inserts that blank line itself, so with
+  /// this off the two tools undo each other's work on every single run
+  /// (issue #1). Under `blank_lines: false` it is suppressed anyway.
   final bool separateRelativeImports;
   final bool testImports;
   final List<String> testImportPrefixes;
@@ -49,6 +57,17 @@ class TidyConfig {
   /// Opt-in for the same reason, and because it costs an analyzer pass.
   final bool removeUnused;
 
+  /// Whether the groups are dropped for one alphabetical run per section —
+  /// the shape the `directives_ordering` lint expects. Opt-in: it throws away
+  /// the group comments that are this tool's most recognisable output.
+  final bool flat;
+
+  /// Whether `package:<self>/…` imports are rewritten as relative paths,
+  /// matching the `prefer_relative_imports` lint. Opt-in, and the opposite of
+  /// what `always_use_package_imports` wants — the two lints disagree, so the
+  /// choice has to be the user's.
+  final bool relativeImports;
+
   /// How many folder segments — counted after the package root — the project
   /// group is broken up by. 0 keeps the whole path, which is the original
   /// behaviour of [groupProjectByFolder]. Any value above 0 also switches
@@ -63,13 +82,15 @@ class TidyConfig {
     required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
-    this.separateRelativeImports = false,
+    this.separateRelativeImports = true,
     this.testImports = false,
     this.testImportPrefixes = defaultTestImportPrefixes,
     this.sortExports = false,
     this.groupProjectByFolderDepth = 0,
     this.removeDuplicates = false,
     this.removeUnused = false,
+    this.flat = false,
+    this.relativeImports = false,
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -135,7 +156,7 @@ class TidyConfig {
       sortPubspec: config['sort_pubspec'] as bool? ?? false,
       groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
       separateRelativeImports:
-          config['separate_relative_imports'] as bool? ?? false,
+          config['separate_relative_imports'] as bool? ?? true,
       testImports: config['test_imports'] as bool? ?? false,
       testImportPrefixes:
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
@@ -144,6 +165,8 @@ class TidyConfig {
       sortExports: config['sort_exports'] as bool? ?? false,
       removeDuplicates: config['remove_duplicates'] as bool? ?? false,
       removeUnused: config['remove_unused'] as bool? ?? false,
+      flat: config['flat'] as bool? ?? false,
+      relativeImports: config['relative_imports'] as bool? ?? false,
       groupProjectByFolderDepth:
           config['group_project_by_folder_depth'] as int? ?? 0,
     );

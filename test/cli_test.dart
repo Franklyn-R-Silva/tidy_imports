@@ -298,6 +298,54 @@ void main() {}
     expect(result.stdout, contains('found 1 duplicate import'));
   });
 
+  test('--flat emits one alphabetical run, flutter included', () {
+    final file = libFile('main.dart')
+      ..writeAsStringSync("import 'package:flutter/material.dart';\n"
+          "import 'package:args/args.dart';\n"
+          "import 'dart:io';\n"
+          '\n'
+          'void main() {}\n');
+
+    expect(run(['--flat']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      '''
+import 'dart:io';
+import 'package:args/args.dart';
+import 'package:flutter/material.dart';
+
+void main() {}
+''',
+    );
+  });
+
+  test('--relative-imports rewrites own-package uris under lib/', () {
+    Directory('${temp.path}/lib/src').createSync(recursive: true);
+    final file = File('${temp.path}/lib/src/a.dart')
+      ..writeAsStringSync("import 'package:demo/src/b.dart';\n"
+          '\n'
+          'void main() {}\n');
+
+    expect(run(['--relative-imports']).exitCode, 0);
+    expect(file.readAsStringSync(), contains("import 'b.dart';"));
+  });
+
+  test('--relative-imports leaves files outside lib/ alone', () {
+    Directory('${temp.path}/test').createSync(recursive: true);
+    const original = "import 'package:demo/src/b.dart';\n"
+        '\n'
+        'void main() {}\n';
+    final file = File('${temp.path}/test/a_test.dart')
+      ..writeAsStringSync(original);
+
+    expect(run(['--relative-imports']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      contains("import 'package:demo/src/b.dart';"),
+      reason: 'a test cannot reach lib/ with a relative uri',
+    );
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 
