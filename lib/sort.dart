@@ -272,17 +272,26 @@ ImportSortData sortImports(
   emitBlock(imports, 'imports');
   emitBlock(exports, 'exports');
 
-  sortedLines.add('');
-
+  // Everything below the directive block, with the blank lines that separated
+  // it from the directives dropped — the emitter re-adds exactly one.
+  final trailing = <String>[];
   var addedCode = false;
-  for (var j = 0; j < afterLines.length; j++) {
-    if (afterLines[j] != '') {
-      sortedLines.add(afterLines[j]);
+  for (final line in afterLines) {
+    if (line != '') {
+      trailing.add(line);
       addedCode = true;
+    } else if (addedCode) {
+      trailing.add(line);
     }
-    if (addedCode && afterLines[j] == '') {
-      sortedLines.add(afterLines[j]);
-    }
+  }
+
+  // A barrel file ends on its last directive. Emitting the separator anyway
+  // left a blank line below it, which `dart format` then strips right back
+  // out — so the two tools undid each other on every run (issue #6).
+  if (trailing.isNotEmpty) {
+    sortedLines
+      ..add('')
+      ..addAll(trailing);
   }
   sortedLines.add('');
 

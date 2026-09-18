@@ -481,7 +481,6 @@ export 'package:http/http.dart';
 // Project exports:
 export 'package:demo/app.dart';
 export 'helpers.dart';
-
 ''',
       );
     });
@@ -577,7 +576,6 @@ export 'dart:async';
 
 // 🌎 Project exports:
 export 'package:demo/a.dart';
-
 ''',
       );
     });
@@ -636,6 +634,69 @@ void main() {}
       );
 
       expect(result.updated, isFalse);
+    });
+
+    test('leaves no blank line below the last export (issue #6)', () {
+      final lines = ["export 'a.dart';"];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        sortExports: true,
+      );
+
+      expect(result.sortedFile, "export 'a.dart';\n");
+    });
+
+    test('drops the blank line an earlier run left below the last export', () {
+      final lines = [
+        '// Project exports:',
+        "export 'a.dart';",
+        '',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        sortExports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Project exports:
+export 'a.dart';
+''',
+      );
+    });
+
+    test('re-running a barrel file of exports only makes no change', () {
+      final lines = [
+        '// Dart exports:',
+        "export 'dart:async';",
+        '',
+        '// Project exports:',
+        "export 'package:demo/app.dart';",
+        "export 'helpers.dart';",
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        sortExports: true,
+      );
+
+      expect(result.updated, isFalse);
+      expect(result.sortedFile, '${lines.join('\n')}\n');
     });
   });
 

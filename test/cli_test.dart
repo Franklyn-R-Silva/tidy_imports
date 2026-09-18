@@ -152,6 +152,25 @@ void main() {}
     );
   });
 
+  test('--sort-exports leaves no blank line below a barrel file', () {
+    final file = libFile('barrel.dart')
+      ..writeAsStringSync("export 'package:demo/z.dart';\n"
+          "export 'package:demo/a.dart';\n");
+
+    expect(run(['--sort-exports']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      '''
+// Project exports:
+export 'package:demo/a.dart';
+export 'package:demo/z.dart';
+''',
+    );
+
+    // A second pass must find nothing left to do (issue #6).
+    expect(run(['--sort-exports', '--exit-if-changed']).exitCode, 0);
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 
