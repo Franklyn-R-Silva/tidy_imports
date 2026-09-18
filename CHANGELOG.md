@@ -1,3 +1,27 @@
+## 2.3.0 (2026-09-18)
+
+`--attach-comments` / `attach_comments:`, off by default, keeps a `//` note
+written directly above an import with that import.
+
+Without it the note is not part of the directive, so rebuilding the block
+leaves it behind — below the sorted imports, now explaining whatever follows
+it, and with the group header above it duplicated. That has been the behaviour
+since at least 1.4.0; it surfaced on a 2343-file app where several imports
+carry a paragraph explaining why they exist.
+
+It is opt-in because it moves comments that are already in a file, and a
+project that has learned to write around the old behaviour should not have its
+diff rewritten by an upgrade.
+
+The note above the *first* directive is untouched either way: a licence header,
+or one of our own group comments, belongs at the top of the file. A `///` doc
+comment is never attached — it documents a declaration, not a directive.
+
+### Features
+
+* `--attach-comments` / `attach_comments:` and the `attachComments` parameter
+  on `sortImports`
+
 ## 2.2.1 (2026-09-18)
 
 `--report` read a root-relative URI as nothing at all.

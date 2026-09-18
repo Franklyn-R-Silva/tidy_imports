@@ -54,6 +54,11 @@ Options
                                  relative paths, matching the
                                  `prefer_relative_imports` lint. Only inside
                                  lib/. Off by default.
+      --attach-comments          Keep a // comment written directly above an
+                                 import with that import. Without it the
+                                 comment ends up below the sorted block. The
+                                 note above the first import is a file header
+                                 either way. Off by default.
       --remove-duplicates        Drop an import written identically twice,
                                  keeping the first. Off by default.
       --remove-unused            Run `dart fix --code=unused_import` first, so

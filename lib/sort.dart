@@ -38,6 +38,12 @@ const _maxDirectiveLines = 512;
 /// `directives_ordering` lint expects. Grouping options are ignored under it,
 /// since there are no groups left to shape (import_sorter#58, #28).
 ///
+/// [attachComments] keeps a `//` comment written directly above a directive
+/// with that directive. Off by default: without it such a comment is not part
+/// of the directive, so once the block has been rebuilt it ends up below the
+/// sorted imports, explaining whatever now follows it. A comment above the
+/// *first* directive is the file's own header either way and stays on top.
+///
 /// [relativeImports] rewrites `package:<packageName>/…` URIs as paths relative
 /// to [libRelativePath], the file's own location under `lib/`. Without that
 /// path there is nothing to be relative *to*, so the rewrite is skipped — as
@@ -72,6 +78,7 @@ ImportSortData sortImports(
   bool flat = false,
   bool relativeImports = false,
   String? libRelativePath,
+  bool attachComments = false,
 }) {
   // Asking for a folder depth is asking for folder grouping; requiring both
   // options only creates a way to set the depth and see nothing happen.
@@ -113,11 +120,14 @@ ImportSortData sortImports(
   bool startsDirective(String line) =>
       line.startsWith('import ') || (sortExports && line.startsWith('export '));
 
-  // Whether a directive begins at [index], looking past any `// ignore:`
-  // pragmas that belong to it. Decides whether a header line above is ours.
+  // Whether a directive begins at [index], looking past the comment lines
+  // that belong to it. Decides whether a header line above is ours — and a
+  // header followed by a note about the import below it is still ours.
   bool directiveFollows(int index) {
     var i = index;
-    while (i < lines.length && _isIgnorePragma(lines[i])) {
+    while (i < lines.length &&
+        (_isIgnorePragma(lines[i]) ||
+            (attachComments && _isAttachedComment(lines[i])))) {
       i++;
     }
     return i < lines.length && startsDirective(lines[i]);
@@ -209,10 +219,21 @@ ImportSortData sortImports(
         continue;
       }
 
-      // `// ignore:` suppresses a lint on the line below it, so it is part of
-      // the directive that follows — when one actually follows.
+      // A comment written directly above a directive explains it, so it moves
+      // with it. `// ignore:` has to, or the suppression is switched off; a
+      // plain note has to as well, or it ends up below the sorted block,
+      // explaining whatever now follows it.
+      //
+      // Only once the block has started: a comment above the *first* directive
+      // is the file's own header — a licence, a `// Dart imports:` of ours —
+      // and belongs at the top, where it was.
+      // A comment above the *first* directive is the file's own header — a
+      // licence, a `// Dart imports:` of ours — so it is never attached.
+      final attaching = attachComments && !noDirectives();
       var start = index;
-      while (start < lines.length && _isIgnorePragma(lines[start])) {
+      while (start < lines.length &&
+          (_isIgnorePragma(lines[start]) ||
+              (attaching && _isAttachedComment(lines[start])))) {
         start++;
       }
 
@@ -476,6 +497,14 @@ final _mainDeclaration = RegExp(
 
 /// Matches the quoted URI of a directive.
 final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
+
+/// Whether [line] is a comment that belongs to the directive below it.
+bool _isAttachedComment(String line) {
+  final trimmed = line.trimLeft();
+  // A doc comment documents a declaration, never a directive, so it is left
+  // where it is rather than dragged into the block.
+  return trimmed.startsWith('//') && !trimmed.startsWith('///');
+}
 
 /// Whether [line] is an `// ignore:` pragma, which suppresses a lint on the
 /// line below it and therefore belongs to the directive that follows.
