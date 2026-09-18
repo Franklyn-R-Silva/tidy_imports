@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  # The two pinned actions in test.yml and publish.yml age silently otherwise;
+  # nothing in a green build tells you checkout@v4 has been superseded.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+
+  # Runtime deps are args, tint and yaml; the rest are dev-only. Grouped into
+  # one PR a month so a three-package bump is one review, not three.
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+    groups:
+      dart-dependencies:
+        patterns:
+          - "*"
