@@ -1,3 +1,25 @@
+## 2.2.1 (2026-09-18)
+
+`--report` read a root-relative URI as nothing at all.
+
+`export '/features/login/screens/login_screen.dart';` is how FlutterFlow writes
+its barrels, and Dart resolves it against the importing package's `lib/`. 2.2.0
+returned null for the whole form — a review verifier had argued Dart has no
+root-relative URI, and the argument was wrong. Every file such a barrel exported
+lost its incoming edge.
+
+Found on a real 2343-file Flutter app the first time the report ran on one: 63
+files listed as unreachable, among them the login screen, the settings screen
+and half the order module, all of them reached through one `lib/index.dart`
+with 38 root-relative exports. With the form resolved the same list is 7 — and
+those seven are genuinely dead.
+
+### Bug Fixes
+
+* `resolveUri`: a leading `/` resolves against the `lib/` of the importing
+  file's own package, sub-packages included; outside a `lib/` there is no root
+  to resolve against and it stays null
+
 ## 2.2.0 (2026-09-18)
 
 A review of `--report` — five reviewers, one lens each, then three adversarial

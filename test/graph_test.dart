@@ -53,8 +53,26 @@ void main() {
     String? r(String uri, {String from = 'lib/a.dart'}) =>
         resolveUri(uri, from: from, packageName: 'app');
 
-    test('a leading slash is not a project file', () {
-      expect(r('/lib/b.dart'), isNull);
+    test('a leading slash is relative to the package lib/', () {
+      // FlutterFlow barrels are written this way, and Dart resolves them
+      // against the importing package's root.
+      expect(
+          r('/features/b.dart', from: 'lib/index.dart'), 'lib/features/b.dart');
+      expect(r('/b.dart', from: 'lib/src/deep/a.dart'), 'lib/b.dart');
+    });
+
+    test('a leading slash outside any lib/ has no root to resolve against', () {
+      expect(r('/b.dart', from: 'test/a_test.dart'), isNull);
+    });
+
+    test('a leading slash resolves inside its own sub-package', () {
+      expect(
+        resolveUri('/b.dart',
+            from: 'packages/core/lib/a.dart',
+            packageName: 'app',
+            packages: {'packages/core': 'core'}),
+        'packages/core/lib/b.dart',
+      );
     });
 
     test('dot and empty segments are ignored in both forms', () {
