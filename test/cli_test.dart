@@ -666,4 +666,67 @@ void main() {}
     expect(result.stderr, contains('invalid file pattern'));
     expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
   });
+
+  group('config diagnostics', () {
+    File configFile() => File('${temp.path}/tidy_imports.yaml');
+
+    test('a config wrapped in tidy_imports: takes effect, with a warning', () {
+      final file = libFile('main.dart')..writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('tidy_imports:\n  emojis: true\n');
+
+      final result = run();
+
+      expect(result.exitCode, 0);
+      expect(
+        file.readAsStringSync(),
+        contains('🎯'),
+        reason: 'the point of accepting the envelope is that the options '
+            'inside it are obeyed — a warning that changed nothing would be '
+            'the silent failure with extra text on top',
+      );
+      expect(result.stderr, contains('tidy_imports:'));
+    });
+
+    test('a misspelled option warns and names the option it almost is', () {
+      libFile('main.dart').writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('sort_export: true\n');
+
+      final result = run();
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, contains('sort_exports'));
+    });
+
+    test('--strict-config turns the warning into a refusal', () {
+      final file = libFile('main.dart')..writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('sort_export: true\n');
+
+      final result = run(['--strict-config']);
+
+      expect(result.exitCode, 1);
+      expect(
+        file.readAsStringSync(),
+        unsorted,
+        reason: 'a refusal that had already rewritten the project would be a '
+            'strange kind of refusal',
+      );
+    });
+
+    test('--strict-config passes on a config it understands', () {
+      libFile('main.dart').writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('emojis: true\n');
+
+      expect(run(['--strict-config']).exitCode, 0);
+    });
+
+    test('--ignore-config has no config to complain about', () {
+      libFile('main.dart').writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('sort_export: true\n');
+
+      final result = run(['--ignore-config']);
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, isNot(contains('sort_exports')));
+    });
+  });
 }

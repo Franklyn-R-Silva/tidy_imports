@@ -39,6 +39,7 @@ void main(List<String> args) {
     ..addFlag('separate-relative-imports')
     ..addFlag('test-imports')
     ..addFlag('ignore-config', negatable: false)
+    ..addFlag('strict-config', negatable: false)
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
@@ -80,6 +81,33 @@ void main(List<String> args) {
   final config = argResults['ignore-config'] == true
       ? TidyConfig.fromYaml(null)
       : TidyConfig.load(currentPath, pubspecYaml as YamlMap);
+
+  // Configuration problems are said out loud, and this is the only place that
+  // says them — `lib/` collects them as data and prints nothing.
+  //
+  // They used to be invisible. A file in the pubspec shape, or a key with a
+  // typo in it, was read, understood as nothing, and replaced by defaults: the
+  // run reported success while doing the opposite of what the file asked for,
+  // and there was no output anywhere to suggest otherwise. So a warning is the
+  // default, not an opt-in — a diagnostic nobody turns on would leave the
+  // silence exactly where it was.
+  //
+  // `--strict-config` is for CI, where "it warned" and "nobody read it" are
+  // the same thing. It exits before the first file is touched: a refusal that
+  // had already rewritten the project would be a strange kind of refusal.
+  if (config.issues.isNotEmpty) {
+    final strictConfig = argResults['strict-config'] == true;
+    for (final issue in config.issues) {
+      stderr.writeln('${strictConfig ? 'Error' : 'Warning'}: $issue');
+    }
+    if (strictConfig) {
+      stderr.writeln(
+        'Refusing to run under --strict-config. Fix the configuration, or '
+        'drop the flag to continue with the defaults it fell back to.',
+      );
+      exit(1);
+    }
+  }
 
   // A flag the user actually typed wins; otherwise the config decides. This
   // used to be `config.x || flag`, which meant a flag could only ever turn

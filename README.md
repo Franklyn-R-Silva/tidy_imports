@@ -190,6 +190,7 @@ prefer the tighter output, `--no-separate-relative-imports` or
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change — or, with `--report`, on any finding |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
+| `--strict-config` | | Exit with code 1 on a configuration problem instead of warning about it |
 | `--version` | `-v` | Print version and exit |
 | `--help` | `-h` | Show help |
 
@@ -271,6 +272,35 @@ sort_pubspec: true
 ignored_files:
   - \.g\.dart$
 ```
+
+**The options are the document — no `tidy_imports:` key around them.** That
+wrapper is the `pubspec.yaml` shape, where the block has to be named because it
+shares the file with everything else. Write it in the standalone file and every
+option sits one level below where it is read.
+
+That used to cost the whole file in silence: it parsed, configured nothing, and
+the run fell back to defaults while reporting success. Now the wrapper is
+unwrapped and reported:
+
+```
+Warning: tidy_imports.yaml wraps its options in a `tidy_imports:` key. That
+shape belongs in pubspec.yaml — in a standalone file the options are the
+document. Reading them from inside the key; move them to the top level to
+silence this.
+```
+
+The same goes for an option that is misspelled or has the wrong kind of value:
+
+```
+Warning: unknown option `sort_export` in the tidy_imports configuration. Did
+you mean `sort_exports`? It is being ignored.
+Warning: option `emojis` expects a boolean (true or false), but the value is a
+String. Using the default.
+```
+
+Every one of these keeps the run going. Pass **`--strict-config`** to exit 1 on
+any of them instead — it stops before the first file is touched, which is what
+you want in CI, where a warning nobody reads is the same as no warning at all.
 
 ### Custom import tiers
 

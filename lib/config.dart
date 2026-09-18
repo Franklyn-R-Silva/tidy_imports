@@ -4,6 +4,81 @@ import 'dart:io';
 // Package imports:
 import 'package:yaml/yaml.dart';
 
+/// Every key the reader below understands.
+///
+/// Anything else in a config file is a typo, or an option from a version the
+/// user is not running. Either way they meant something by it, and dropping it
+/// without a word is how a config ends up describing a run that never happened.
+/// **Adding an option means adding it here too** — the test
+/// `every option the reader supports passes without a word` fails when the two
+/// drift apart.
+const _knownKeys = {
+  'emojis',
+  'comments',
+  'blank_lines',
+  'sort_pubspec',
+  'group_project_by_folder',
+  'group_project_by_folder_depth',
+  'separate_relative_imports',
+  'test_imports',
+  'test_import_prefixes',
+  'ignored_files',
+  'report_roots',
+  'tiers',
+  'sort_exports',
+  'remove_duplicates',
+  'remove_unused',
+  'flat',
+  'relative_imports',
+  'attach_comments',
+};
+
+/// The known key [name] was probably meant to be, or null when nothing is
+/// close enough to guess.
+///
+/// Two edits is the ceiling: it catches the plausible slips (`sort_export`,
+/// `ignored_file`, `emoji`) without turning an unrelated word into a confident
+/// wrong suggestion, which reads as the tool misunderstanding the file.
+String? _closestKey(String name) {
+  String? closest;
+  var best = 3;
+  for (final key in _knownKeys) {
+    final distance = _editDistance(name, key);
+    if (distance < best) {
+      best = distance;
+      closest = key;
+    }
+  }
+  return closest;
+}
+
+/// Levenshtein distance, two rows at a time.
+int _editDistance(String a, String b) {
+  if (a == b) return 0;
+  if (a.isEmpty) return b.length;
+  if (b.isEmpty) return a.length;
+
+  var previous = List<int>.generate(b.length + 1, (final i) => i);
+  var current = List<int>.filled(b.length + 1, 0);
+
+  for (var i = 0; i < a.length; i++) {
+    current[0] = i + 1;
+    for (var j = 0; j < b.length; j++) {
+      final substitution = previous[j] + (a[i] == b[j] ? 0 : 1);
+      final insertion = current[j] + 1;
+      final deletion = previous[j + 1] + 1;
+      current[j + 1] = substitution < insertion
+          ? (substitution < deletion ? substitution : deletion)
+          : (insertion < deletion ? insertion : deletion);
+    }
+    final swap = previous;
+    previous = current;
+    current = swap;
+  }
+
+  return previous[b.length];
+}
+
 /// A user-defined import tier that sits between generic `package:` imports
 /// and project imports. See issue import_sorter#81.
 class CustomTier {
@@ -86,6 +161,17 @@ class TidyConfig {
   /// that grouping on, since setting a depth is asking for it.
   final int groupProjectByFolderDepth;
 
+  /// Every problem found while reading the configuration, as a sentence ready
+  /// to print.
+  ///
+  /// Configuration failures used to be invisible: a file in the wrong shape,
+  /// or a key with a typo in it, was read, discarded and replaced by defaults
+  /// without a word — the run looked successful and did the opposite of what
+  /// the file said. These are what make that audible. `lib/` still prints
+  /// nothing; `bin/` decides whether they are warnings or, under
+  /// `--strict-config`, errors.
+  final List<String> issues;
+
   const TidyConfig({
     required this.emojis,
     required this.noComments,
@@ -105,93 +191,224 @@ class TidyConfig {
     this.relativeImports = false,
     this.reportRoots = const [],
     this.attachComments = false,
+    this.issues = const [],
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
   /// `tidy_imports:` block in `pubspec.yaml`.
   factory TidyConfig.load(String currentPath, YamlMap pubspecYaml) {
     final standaloneFile = File('$currentPath/tidy_imports.yaml');
-    dynamic config;
     if (standaloneFile.existsSync()) {
-      config = loadYaml(standaloneFile.readAsStringSync());
-    } else {
-      config = pubspecYaml['tidy_imports'];
+      return TidyConfig.fromStandalone(
+        loadYaml(standaloneFile.readAsStringSync()),
+      );
     }
-    return TidyConfig.fromYaml(config);
+    return TidyConfig.fromYaml(pubspecYaml['tidy_imports']);
+  }
+
+  /// Builds a config from the parsed contents of a standalone
+  /// `tidy_imports.yaml`.
+  ///
+  /// The two config locations take the same options but not the same shape:
+  /// in `pubspec.yaml` they live under a `tidy_imports:` key, which
+  /// [TidyConfig.load] unwraps by reading that key; in a standalone file they
+  /// are the document. Writing the pubspec shape in the standalone file is the
+  /// easy mistake, and it used to be a silent one — every option ended up one
+  /// level below where it was read, so the file parsed, configured nothing,
+  /// and the run fell back to defaults without a word. The envelope is
+  /// accepted here, and reported.
+  factory TidyConfig.fromStandalone(dynamic yaml) {
+    if (yaml is YamlMap &&
+        yaml.length == 1 &&
+        yaml['tidy_imports'] is YamlMap) {
+      return TidyConfig.fromYaml(yaml['tidy_imports'], [
+        'tidy_imports.yaml wraps its options in a `tidy_imports:` key. That '
+            'shape belongs in pubspec.yaml — in a standalone file the options '
+            'are the document. Reading them from inside the key; move them to '
+            'the top level to silence this.',
+      ]);
+    }
+    return TidyConfig.fromYaml(yaml);
   }
 
   /// Builds a config from a parsed YAML node, applying defaults for anything
   /// missing. A `null` node yields all defaults.
-  factory TidyConfig.fromYaml(dynamic config) {
+  ///
+  /// [priorIssues] carries anything the caller already found about the file
+  /// as a whole, so a single config produces a single list.
+  factory TidyConfig.fromYaml(dynamic config, [List<String>? priorIssues]) {
+    final issues = [...?priorIssues];
+
     if (config == null) {
-      return const TidyConfig(
+      return TidyConfig(
         emojis: false,
         noComments: false,
         noBlankLines: false,
         sortPubspec: false,
         groupProjectByFolder: false,
-        ignoredFiles: [],
-        customTiers: [],
+        ignoredFiles: const [],
+        customTiers: const [],
+        issues: issues,
       );
     }
 
-    final ignored = <String>[];
-    if (config['ignored_files'] != null) {
-      for (final pattern in config['ignored_files'] as YamlList) {
-        ignored.add(pattern as String);
-      }
+    if (config is! YamlMap) {
+      issues.add(
+        'the tidy_imports configuration is not a map of options — it reads as '
+        '${config.runtimeType}. Ignoring it and using the defaults.',
+      );
+      return TidyConfig(
+        emojis: false,
+        noComments: false,
+        noBlankLines: false,
+        sortPubspec: false,
+        groupProjectByFolder: false,
+        ignoredFiles: const [],
+        customTiers: const [],
+        issues: issues,
+      );
     }
 
-    final reportRoots = <String>[];
-    if (config['report_roots'] != null) {
-      for (final pattern in config['report_roots'] as YamlList) {
-        reportRoots.add(pattern as String);
-      }
+    for (final key in config.keys) {
+      final name = '$key';
+      if (_knownKeys.contains(name)) continue;
+      final closest = _closestKey(name);
+      issues.add(
+        closest == null
+            ? 'unknown option `$name` in the tidy_imports configuration. It is '
+                'being ignored.'
+            : 'unknown option `$name` in the tidy_imports configuration. Did '
+                'you mean `$closest`? It is being ignored.',
+      );
     }
 
-    final testPrefixes = <String>[];
-    if (config['test_import_prefixes'] != null) {
-      for (final prefix in config['test_import_prefixes'] as YamlList) {
-        testPrefixes.add(prefix as String);
-      }
-    }
-
-    final tiers = <CustomTier>[];
-    if (config['tiers'] != null) {
-      for (final tier in config['tiers'] as YamlList) {
-        final name = tier['name'] as String?;
-        final pattern = tier['pattern'] as String?;
-        if (name != null && pattern != null) {
-          tiers.add(CustomTier(name, pattern));
-        }
-      }
-    }
+    final comments = _readBool(config, 'comments', issues);
+    final blankLines = _readBool(config, 'blank_lines', issues);
+    final testPrefixes = _readStrings(config, 'test_import_prefixes', issues);
 
     return TidyConfig(
-      emojis: config['emojis'] as bool? ?? false,
-      noComments:
-          config['comments'] == null ? false : !(config['comments'] as bool),
-      noBlankLines: config['blank_lines'] == null
-          ? false
-          : !(config['blank_lines'] as bool),
-      sortPubspec: config['sort_pubspec'] as bool? ?? false,
-      groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
+      emojis: _readBool(config, 'emojis', issues) ?? false,
+      noComments: comments == null ? false : !comments,
+      noBlankLines: blankLines == null ? false : !blankLines,
+      sortPubspec: _readBool(config, 'sort_pubspec', issues) ?? false,
+      groupProjectByFolder:
+          _readBool(config, 'group_project_by_folder', issues) ?? false,
       separateRelativeImports:
-          config['separate_relative_imports'] as bool? ?? true,
-      testImports: config['test_imports'] as bool? ?? false,
+          _readBool(config, 'separate_relative_imports', issues) ?? true,
+      testImports: _readBool(config, 'test_imports', issues) ?? false,
       testImportPrefixes:
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
-      ignoredFiles: ignored,
-      customTiers: tiers,
-      sortExports: config['sort_exports'] as bool? ?? false,
-      removeDuplicates: config['remove_duplicates'] as bool? ?? false,
-      removeUnused: config['remove_unused'] as bool? ?? false,
-      flat: config['flat'] as bool? ?? false,
-      relativeImports: config['relative_imports'] as bool? ?? false,
-      attachComments: config['attach_comments'] as bool? ?? false,
-      reportRoots: reportRoots,
+      ignoredFiles: _readStrings(config, 'ignored_files', issues),
+      customTiers: _readTiers(config, issues),
+      sortExports: _readBool(config, 'sort_exports', issues) ?? false,
+      removeDuplicates: _readBool(config, 'remove_duplicates', issues) ?? false,
+      removeUnused: _readBool(config, 'remove_unused', issues) ?? false,
+      flat: _readBool(config, 'flat', issues) ?? false,
+      relativeImports: _readBool(config, 'relative_imports', issues) ?? false,
+      attachComments: _readBool(config, 'attach_comments', issues) ?? false,
+      reportRoots: _readStrings(config, 'report_roots', issues),
       groupProjectByFolderDepth:
-          config['group_project_by_folder_depth'] as int? ?? 0,
+          _readInt(config, 'group_project_by_folder_depth', issues) ?? 0,
+      issues: issues,
     );
   }
+}
+
+/// Reads [key] as a [T], recording an issue instead of throwing when the value
+/// is something else.
+///
+/// The casts these replace threw a bare `TypeError` naming only the two types
+/// — `type 'String' is not a subtype of type 'bool?' in type cast` — which is
+/// the one thing the user could not act on: it never said which key.
+T? _readTyped<T>(
+  final YamlMap config,
+  final String key,
+  final String expected,
+  final List<String> issues,
+) {
+  final value = config[key];
+  if (value == null) return null;
+  if (value is T) return value;
+  issues.add(
+    'option `$key` expects $expected, but the value is a '
+    '${value.runtimeType}. Using the default.',
+  );
+  return null;
+}
+
+bool? _readBool(
+  final YamlMap config,
+  final String key,
+  final List<String> issues,
+) =>
+    _readTyped<bool>(config, key, 'a boolean (true or false)', issues);
+
+int? _readInt(
+  final YamlMap config,
+  final String key,
+  final List<String> issues,
+) =>
+    _readTyped<int>(config, key, 'a whole number', issues);
+
+/// Reads [key] as a list of strings, reporting both a value that is not a list
+/// and an entry inside it that is not text. A bad entry costs its own line,
+/// not the whole list.
+List<String> _readStrings(
+  final YamlMap config,
+  final String key,
+  final List<String> issues,
+) {
+  final value = _readTyped<YamlList>(config, key, 'a list', issues);
+  if (value == null) return const [];
+
+  final strings = <String>[];
+  for (final entry in value) {
+    if (entry is String) {
+      strings.add(entry);
+      continue;
+    }
+    issues.add(
+      'option `$key` expects a list of text, but one entry is a '
+      '${entry.runtimeType}. Skipping that entry.',
+    );
+  }
+  return strings;
+}
+
+/// Reads the `tiers` list, where each entry needs a `name` and a `pattern`.
+///
+/// An entry missing either used to be dropped in silence, which is the same
+/// failure as the rest of this file: the tier the user wrote simply never
+/// existed at runtime, and nothing said so.
+List<CustomTier> _readTiers(final YamlMap config, final List<String> issues) {
+  final value = _readTyped<YamlList>(
+    config,
+    'tiers',
+    'a list of entries with `name` and `pattern`',
+    issues,
+  );
+  if (value == null) return const [];
+
+  final tiers = <CustomTier>[];
+  for (final entry in value) {
+    if (entry is! YamlMap) {
+      issues.add(
+        'each `tiers` entry needs `name` and `pattern`, but one entry is a '
+        '${entry.runtimeType}. Skipping that entry.',
+      );
+      continue;
+    }
+    final name = entry['name'];
+    final pattern = entry['pattern'];
+    if (name is String && pattern is String) {
+      tiers.add(CustomTier(name, pattern));
+      continue;
+    }
+    issues.add(
+      'each `tiers` entry needs `name` and `pattern`, both text. Skipping the '
+      'entry ${name is String ? 'named `$name`' : 'at position '
+          '${value.indexOf(entry) + 1}'}.',
+    );
+  }
+  return tiers;
 }
