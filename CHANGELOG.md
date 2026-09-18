@@ -57,7 +57,6 @@ the sorted block, and it is what makes sorting `export` possible at all.
 
 ### Bug Fixes
 
-* stop writing a blank line below the last directive ([4004468](https://github.com/Franklyn-R-Silva/tidy_imports/commit/400446810adb59cf6160fb6391fc8404bf4fe012))
 * stop writing a blank line below the last directive ([7d816f1](https://github.com/Franklyn-R-Silva/tidy_imports/commit/7d816f1ab0301fe57c6c516196aae9f6727867d9)), closes [#6](https://github.com/Franklyn-R-Silva/tidy_imports/issues/6)
 
 ## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
