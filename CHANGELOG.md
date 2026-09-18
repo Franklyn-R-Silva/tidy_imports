@@ -52,6 +52,13 @@ the sorted block, and it is what makes sorting `export` possible at all.
 - Changelog sections reordered newest-first. 1.2.0 had been sitting above
   1.3.0, so pub.dev was rendering the wrong version as the latest.
 
+## [1.4.1](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.0...v1.4.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* stop writing a blank line below the last directive ([7d816f1](https://github.com/Franklyn-R-Silva/tidy_imports/commit/7d816f1ab0301fe57c6c516196aae9f6727867d9)), closes [#6](https://github.com/Franklyn-R-Silva/tidy_imports/issues/6)
+
 ## [1.3.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.2.0...v1.3.0) (2026-08-17)
 
 
