@@ -9,7 +9,8 @@
 ```
 
 [![pub version](https://img.shields.io/pub/v/tidy_imports)](https://pub.dev/packages/tidy_imports)
-[![pub points](https://img.shields.io/pub/points/tidy_imports)](https://pub.dev/packages/tidy_imports/score)
+[![pub points](https://img.shields.io/pub/points/tidy_imports?label=pub%20points&color=brightgreen)](https://pub.dev/packages/tidy_imports/score)
+[![likes](https://img.shields.io/pub/likes/tidy_imports)](https://pub.dev/packages/tidy_imports/score)
 [![Dart SDK](https://img.shields.io/badge/Dart-%3E%3D3.0.0-blue)](https://dart.dev)
 [![CI](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml/badge.svg)](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -147,6 +148,8 @@ sorted.
 | `--group-by-folder` | | Separate project imports by subfolder |
 | `--group-by-folder-depth=<n>` | | Folder segments to group project imports by (`0` = whole path; above `0` implies `--group-by-folder`) |
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
+| `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
+| `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
@@ -190,6 +193,8 @@ tidy_imports:
   group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
   separate_relative_imports: false  # Default: false — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
+  remove_duplicates: false  # Default: false — drop an import written identically twice
+  remove_unused: false      # Default: false — run dart fix --code=unused_import first
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
     - fake_
     - mock_
@@ -309,6 +314,57 @@ export 'package:acme_shared/utils.dart';
 export 'src/models/user.dart';
 export 'src/widgets/button.dart';
 ```
+
+## Removing duplicate and unused imports
+
+Both are **off by default**. A sorter that deletes lines uninvited is a sorter
+you stop trusting, so each one has to be asked for — by flag, or by config key.
+
+### `--remove-duplicates`
+
+Drops an import written identically twice, keeping the first occurrence:
+
+```dart
+// before                         // after
+import 'dart:math';               import 'dart:math';
+import 'package:demo/z.dart';
+import 'dart:math';               import 'package:demo/z.dart';
+```
+
+It compares text, with runs of whitespace collapsed — so a directive that
+`dart format` wrapped over two lines still matches its one-line twin. Anything
+that *reads* differently is left alone, because folding it could change what
+the file means:
+
+| Left alone | Why |
+|---|---|
+| `import 'z.dart' as a;` and `as b;` | Different prefixes; both are in use |
+| `show Foo;` and `show Bar;` | Different combinators |
+| `import 'dart:math'; // for max` and the plain form | Dropping one drops what the comment says |
+
+### `--remove-unused`
+
+Runs `dart fix --apply --code=unused_import` over the project first, then sorts
+— so the holes it leaves behind are tidied up in the same pass:
+
+```sh
+dart run tidy_imports --remove-unused --remove-duplicates
+```
+
+This one shells out on purpose. Deciding that an import is unused means
+resolving every identifier in the file to the library that declares it,
+extension methods included. The analyzer that ships with your SDK already does
+that, correctly; approximating it with text matching would eventually remove an
+import that is in use. So the SDK answers the question and `tidy_imports`
+handles the layout.
+
+It needs the Dart SDK on `PATH` and a project that resolves — run `dart pub get`
+first. It also costs a full analyzer pass, about a second on a small project and
+longer on a large one, which is the other reason it is opt-in.
+
+Under `--dry-run` and `--exit-if-changed` nothing is written: `dart fix` runs in
+its own dry-run mode, and duplicates are counted and reported rather than
+removed.
 
 ## Grouping project imports by folder
 

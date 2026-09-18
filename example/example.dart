@@ -1,49 +1,17 @@
-// This file demonstrates tidy_imports usage.
+// tidy_imports by example.
 //
-// Run from the root of any Dart or Flutter project:
+// From the command line, in any Dart or Flutter project:
 //
-//   dart run tidy_imports                 # sort every dart file
-//   dart run tidy_imports --dry-run       # preview without writing
-//   dart run tidy_imports --sort-pubspec  # also sort pubspec.yaml deps
-//   dart run tidy_imports --exit-if-changed   # CI check (exit 1 if unsorted)
+//   dart run tidy_imports              # sort the project
+//   dart run tidy_imports --dry-run    # preview, write nothing
+//   dart run tidy_imports --help       # every option, with its default
 //
-// ---------------------------------------------------------------------------
-// Before tidy_imports:
+// Each option is also a `tidy_imports:` key in pubspec.yaml, and each flag is
+// negatable — `--no-emojis` overrides `emojis: true` for one run.
 //
-//   import 'package:flutter/material.dart';
-//   import 'dart:async';
-//   import 'package:provider/provider.dart';
-//   import 'package:acme_shared/utils.dart';
-//   import 'package:myapp/home.dart';
-//   import 'dart:io';
+// This file tours the library API the CLI is built on. Run it:
 //
-// After tidy_imports (with a custom "Shared imports:" tier configured):
-//
-//   // Dart imports:
-//   import 'dart:async';
-//   import 'dart:io';
-//
-//   // Flutter imports:
-//   import 'package:flutter/material.dart';
-//
-//   // Package imports:
-//   import 'package:provider/provider.dart';
-//
-//   // Shared imports:
-//   import 'package:acme_shared/utils.dart';
-//
-//   // Project imports:
-//   import 'package:myapp/home.dart';
-// ---------------------------------------------------------------------------
-//
-// Configuration (pubspec.yaml or a standalone tidy_imports.yaml):
-//
-//   tidy_imports:
-//     emojis: false
-//     sort_pubspec: true
-//     tiers:
-//       - name: "Shared imports:"
-//         pattern: "package:acme_shared"
+//   dart run example/example.dart
 
 // Dart imports:
 import 'dart:io';
@@ -53,23 +21,116 @@ import 'package:tidy_imports/tidy_imports.dart';
 
 void main() {
   stdout.writeln('tidy_imports $packageVersion');
-  stdout.writeln('Run `dart run tidy_imports` from your project root.');
-  stdout.writeln('See the README for full usage, options, and configuration.');
 
-  // The public API can also be used programmatically:
-  final result = sortImports(
+  _demo(
+    'Grouped by origin: dart, flutter, package, project',
     [
-      "import 'package:http/http.dart';",
+      "import 'package:flutter/material.dart';",
       "import 'dart:async';",
+      "import 'package:provider/provider.dart';",
+      "import 'package:my_app/home.dart';",
+      "import 'dart:io';",
       '',
       'void main() {}',
     ],
-    'my_package',
-    false, // emojis
-    false, // exitIfChanged
-    false, // noComments
   );
+
+  _demo(
+    'A tier of your own, between package and project',
+    [
+      "import 'package:acme_shared/utils.dart';",
+      "import 'package:provider/provider.dart';",
+      "import 'package:my_app/home.dart';",
+      '',
+      'void main() {}',
+    ],
+    customTiers: const [CustomTier('Shared imports:', 'package:acme_shared')],
+  );
+
+  _demo(
+    'Exports get their own block, after the imports',
+    [
+      "export 'package:my_app/models.dart';",
+      "import 'dart:convert';",
+      "export 'package:my_app/api.dart';",
+      '',
+      'void main() {}',
+    ],
+    sortExports: true,
+  );
+
+  _demo(
+    'Duplicates fold; an aliased import of the same library does not',
+    [
+      "import 'dart:math';",
+      "import 'package:http/http.dart';",
+      "import 'dart:math';",
+      "import 'package:http/http.dart' as http;",
+      '',
+      'void main() {}',
+    ],
+    removeDuplicates: true,
+  );
+
+  _demo(
+    'Test doubles last — and only the project ones',
+    [
+      "import 'package:my_app/repo.dart';",
+      "import 'fake_repo.dart';",
+      "import 'package:mockito/mockito.dart';",
+      '',
+      'void main() {}',
+    ],
+    testImports: true,
+  );
+
   stdout.writeln(
-      '\nProgrammatic sort produced ${result.updated ? 'changes' : 'no changes'}:');
-  stdout.write(result.sortedFile);
+    '\nRemoving imports that are merely *unused* is a different question: it\n'
+    'needs a resolved element model, so the CLI hands that one to the SDK.\n'
+    'Run `dart run tidy_imports --remove-unused` to have it do both.',
+  );
+}
+
+/// Runs one demonstration and prints the lines before and after.
+///
+/// [sortImports] is pure — it takes lines, returns lines, reads no file, writes
+/// no file and never exits. What an unsorted file *means* is the caller's call,
+/// which is why `bin/` and not `lib/` decides to fail a CI run.
+void _demo(
+  String title,
+  List<String> lines, {
+  List<CustomTier> customTiers = const [],
+  bool sortExports = false,
+  bool removeDuplicates = false,
+  bool testImports = false,
+}) {
+  final result = sortImports(
+    lines,
+    'my_app',
+    false, // emojis
+    // The fourth positional is `exitIfChanged`: deprecated, inert since 1.4.2,
+    // and gone in 2.0.0. Passed once, here, so the demos below stay readable.
+    // ignore: deprecated_member_use_from_same_package
+    false,
+    false, // noComments
+    customTiers: customTiers,
+    sortExports: sortExports,
+    removeDuplicates: removeDuplicates,
+    testImports: testImports,
+  );
+
+  stdout.writeln('\n── $title');
+  _block('before', lines);
+  _block('after', result.sortedFile.trimRight().split('\n'));
+
+  if (result.duplicatesRemoved > 0) {
+    stdout.writeln('   (${result.duplicatesRemoved} duplicate dropped)');
+  }
+}
+
+void _block(String label, List<String> lines) {
+  stdout.writeln('  $label:');
+  for (final line in lines) {
+    stdout.writeln(line.isEmpty ? '' : '    $line');
+  }
 }

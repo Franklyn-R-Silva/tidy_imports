@@ -20,6 +20,14 @@ const _maxDirectiveLines = 24;
 /// Returns [ImportSortData] containing the sorted file content and whether
 /// any changes were made. Pure: it reads nothing, writes nothing, and never
 /// terminates the process — what an unsorted file means is the caller's call.
+///
+/// [removeDuplicates] drops a directive that repeats one already kept, keeping
+/// the first occurrence. It compares text, not meaning, so it only ever folds
+/// away a directive written identically twice — the shape a merge or a
+/// double auto-import produces. Removing an import that is merely *unused*
+/// is a different question, one that needs a resolved element model;
+/// `dart fix --apply --code=unused_import` answers it, and the CLI's
+/// `--remove-unused` runs exactly that before sorting.
 ImportSortData sortImports(
   List<String> lines,
   String packageName,
@@ -44,6 +52,7 @@ ImportSortData sortImports(
   bool separateRelativeImports = false,
   bool sortExports = false,
   int groupProjectByFolderDepth = 0,
+  bool removeDuplicates = false,
 }) {
   // Asking for a folder depth is asking for folder grouping; requiring both
   // options only creates a way to set the depth and see nothing happen.
@@ -119,6 +128,10 @@ ImportSortData sortImports(
     }
   }
 
+  // Signatures of the directives kept so far, for [removeDuplicates].
+  final seen = <String>{};
+  var duplicatesRemoved = 0;
+
   final scanner = _SourceScanner();
   var order = 0;
   var index = 0;
@@ -150,10 +163,16 @@ ImportSortData sortImports(
           final body = lines.sublist(start, start + span);
           final uri = _directiveUri(body.first);
           if (uri != null) {
-            classify(
-              _Directive(lines.sublist(index, start), body, uri, order++),
-              isExport: body.first.startsWith('export '),
-            );
+            final directive =
+                _Directive(lines.sublist(index, start), body, uri, order++);
+            if (removeDuplicates && !seen.add(directive.signature)) {
+              duplicatesRemoved++;
+            } else {
+              classify(
+                directive,
+                isExport: body.first.startsWith('export '),
+              );
+            }
             // A directive can carry a `/*` or a string of its own, so the
             // scanner has to walk the lines the loop skips over.
             for (var i = index; i < start + span; i++) {
@@ -314,7 +333,7 @@ ImportSortData sortImports(
     return ImportSortData(original, false);
   }
 
-  return ImportSortData(sortedFile, true);
+  return ImportSortData(sortedFile, true, duplicatesRemoved: duplicatesRemoved);
 }
 
 /// Matches the quoted URI of a directive.
@@ -566,6 +585,18 @@ class _Directive {
   /// The directive's source without trailing comments — what custom tier
   /// patterns are matched against.
   String get code => lines.map(_stripTrailingComment).join(' ');
+
+  /// Identity for duplicate detection: the whole directive, `// ignore:` lines
+  /// included, with runs of whitespace collapsed.
+  ///
+  /// Collapsing whitespace makes a directive `dart format` wrapped over two
+  /// lines match the same one written on a single line. Trailing comments are
+  /// deliberately *kept*: two imports of the same library whose comments differ
+  /// are not folded together, because dropping one would drop what it says.
+  /// Deciding that a differently-written import is redundant needs a resolved
+  /// element model — that is `dart fix`'s job, not this one's.
+  String get signature =>
+      [...leading, ...lines].join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 /// The groups one block of directives is split into.
@@ -604,5 +635,13 @@ class ImportSortData {
   final String sortedFile;
   final bool updated;
 
-  const ImportSortData(this.sortedFile, this.updated);
+  /// How many directives `removeDuplicates` dropped. Always 0 when the option
+  /// is off, so a caller can report it without checking the flag.
+  final int duplicatesRemoved;
+
+  const ImportSortData(
+    this.sortedFile,
+    this.updated, {
+    this.duplicatesRemoved = 0,
+  });
 }

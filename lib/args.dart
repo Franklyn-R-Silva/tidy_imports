@@ -44,6 +44,11 @@ Options
                                  project imports, matching dart format 3.13+.
       --test-imports             Give project files named fake_* / mock_* their
                                  own "Test imports:" group, written last.
+      --remove-duplicates        Drop an import written identically twice,
+                                 keeping the first. Off by default.
+      --remove-unused            Run `dart fix --code=unused_import` first, so
+                                 unused imports go before the sort. Needs the
+                                 Dart SDK on PATH. Off by default.
       --no-comments              Leave out the group comments.
       --no-blank-lines           Leave out the blank lines between groups.
 
@@ -68,5 +73,6 @@ Examples
   dart run tidy_imports lib/main.dart
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
+  dart run tidy_imports --remove-unused --remove-duplicates
   dart run tidy_imports --no-emojis
 ''';

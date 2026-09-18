@@ -28,6 +28,8 @@ void main(List<String> args) {
     ..addFlag('blank-lines', defaultsTo: true)
     ..addFlag('sort-pubspec')
     ..addFlag('sort-exports')
+    ..addFlag('remove-duplicates')
+    ..addFlag('remove-unused')
     ..addFlag('group-by-folder')
     ..addOption('group-by-folder-depth', valueHelp: 'n')
     ..addFlag('separate-relative-imports')
@@ -87,6 +89,9 @@ void main(List<String> args) {
   final noBlankLines = !resolve('blank-lines', !config.noBlankLines);
   final sortPubspec = resolve('sort-pubspec', config.sortPubspec);
   final sortExports = resolve('sort-exports', config.sortExports);
+  final removeDuplicates =
+      resolve('remove-duplicates', config.removeDuplicates);
+  final removeUnused = resolve('remove-unused', config.removeUnused);
   final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
   // A depth is a count of folder segments, so anything but a non-negative
@@ -164,7 +169,17 @@ void main(List<String> args) {
 
   final stopwatch = Stopwatch()..start();
   final sortedFiles = <String>[];
+  var duplicatesRemoved = 0;
   final success = '✔'.green();
+
+  // Whether an import is *used* is a question about resolved elements, not
+  // about text, and this tool deliberately never resolves anything. The
+  // analyzer already answers it — and ships with every SDK — so `dart fix`
+  // does the removal and the sort that follows tidies up the gaps it leaves.
+  if (removeUnused) {
+    final code = _removeUnusedImports(currentPath, readOnly: readOnly);
+    if (code != 0) exit(code);
+  }
 
   for (final filePath in dartFiles.keys) {
     final file = dartFiles[filePath];
@@ -193,7 +208,9 @@ void main(List<String> args) {
       separateRelativeImports: separateRelativeImports,
       sortExports: sortExports,
       groupProjectByFolderDepth: groupByFolderDepth,
+      removeDuplicates: removeDuplicates,
     );
+    duplicatesRemoved += result.duplicatesRemoved;
     if (!result.updated) continue;
 
     final output = usesCrlf
@@ -223,8 +240,12 @@ void main(List<String> args) {
 
   final elapsed = (stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2);
   final action = exitOnChange ? 'Checked' : (dryRun ? 'Would sort' : 'Sorted');
+  final folded = duplicatesRemoved == 0
+      ? ''
+      : ', ${dryRun || exitOnChange ? 'found' : 'dropped'} $duplicatesRemoved '
+          'duplicate ${duplicatesRemoved == 1 ? 'import' : 'imports'}';
   stdout.writeln(
-      '┗━━ $success $action ${sortedFiles.length} files in ${elapsed}s');
+      '┗━━ $success $action ${sortedFiles.length} files$folded in ${elapsed}s');
 
   // Optionally sort pubspec.yaml dependency sections (issue import_sorter#89).
   var pubspecUnsorted = false;
@@ -248,4 +269,62 @@ void main(List<String> args) {
     );
     exit(1);
   }
+}
+
+/// Runs `dart fix` for `unused_import` over [projectPath].
+///
+/// Returns 0 to carry on, or an exit code to stop with. Under [readOnly] it
+/// only reports: `--dry-run` and `--exit-if-changed` promise not to write, and
+/// that promise has to cover the fixes too.
+///
+/// This shells out on purpose. Knowing an import is unused means resolving
+/// every identifier in the file to the library that declares it — extension
+/// methods and all — and the analyzer that ships with the SDK already does it
+/// correctly. Reimplementing it on top of text matching would remove imports
+/// that are in use.
+int _removeUnusedImports(String projectPath, {required bool readOnly}) {
+  final dart = _dartExecutable();
+  final args = [
+    'fix',
+    readOnly ? '--dry-run' : '--apply',
+    '--code=unused_import',
+  ];
+
+  stdout.writeln(
+    '┏━━ ${readOnly ? 'Checking for' : 'Removing'} unused imports '
+    '(${[dart.split(Platform.pathSeparator).last, ...args].join(' ')})',
+  );
+
+  final ProcessResult result;
+  try {
+    result = Process.runSync(dart, args, workingDirectory: projectPath);
+  } on ProcessException catch (e) {
+    stderr.writeln('Error: could not run `dart fix`: ${e.message}');
+    stderr.writeln('--remove-unused needs the Dart SDK on PATH.');
+    return 1;
+  }
+
+  final output = '${result.stdout}'.trim();
+  if (output.isNotEmpty) stdout.writeln(output);
+
+  if (result.exitCode != 0) {
+    stderr.writeln('${result.stderr}'.trim());
+    stderr.writeln(
+      'Error: `dart fix` failed. It needs a project that resolves — try '
+      '`dart pub get` first.',
+    );
+    return result.exitCode;
+  }
+  return 0;
+}
+
+/// The `dart` binary to shell out to.
+///
+/// [Platform.resolvedExecutable] is the Dart VM when the tool runs through
+/// `dart run`, which is the common case and the most reliable answer. Compiled
+/// to an executable it is *this* binary instead, so fall back to PATH.
+String _dartExecutable() {
+  final resolved = Platform.resolvedExecutable;
+  final name = resolved.split(Platform.pathSeparator).last.toLowerCase();
+  return (name == 'dart' || name == 'dart.exe') ? resolved : 'dart';
 }

@@ -249,6 +249,55 @@ tidy_imports:
     expect(file.readAsStringSync(), contains("import 'dart:io';"));
   });
 
+  test('--remove-duplicates folds repeated imports and reports the count', () {
+    final file = libFile('main.dart')
+      ..writeAsStringSync("import 'package:demo/z.dart';\n"
+          "import 'dart:io';\n"
+          "import 'package:demo/z.dart';\n"
+          '\n'
+          'void main() {}\n');
+
+    final result = run(['--remove-duplicates']);
+
+    expect(result.exitCode, 0);
+    expect(file.readAsStringSync(), sorted);
+    expect(result.stdout, contains('dropped 1 duplicate import'));
+  });
+
+  test('duplicates are kept unless the flag is passed', () {
+    const withDuplicate = "import 'dart:io';\n"
+        "import 'dart:io';\n"
+        '\n'
+        'void main() {}\n';
+    final file = libFile('main.dart')..writeAsStringSync(withDuplicate);
+
+    expect(run().exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      '''
+// Dart imports:
+import 'dart:io';
+import 'dart:io';
+
+void main() {}
+''',
+    );
+  });
+
+  test('--dry-run with --remove-duplicates writes nothing', () {
+    const withDuplicate = "import 'dart:io';\n"
+        "import 'dart:io';\n"
+        '\n'
+        'void main() {}\n';
+    final file = libFile('main.dart')..writeAsStringSync(withDuplicate);
+
+    final result = run(['--dry-run', '--remove-duplicates']);
+
+    expect(result.exitCode, 0);
+    expect(file.readAsStringSync(), withDuplicate);
+    expect(result.stdout, contains('found 1 duplicate import'));
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 

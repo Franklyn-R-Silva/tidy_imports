@@ -41,6 +41,14 @@ class TidyConfig {
   /// by default it would rewrite the barrel file of every existing project.
   final bool sortExports;
 
+  /// Whether a directive written identically twice is folded into one.
+  /// Opt-in: removing a line is not something a sorter should do uninvited.
+  final bool removeDuplicates;
+
+  /// Whether `dart fix --apply --code=unused_import` runs before sorting.
+  /// Opt-in for the same reason, and because it costs an analyzer pass.
+  final bool removeUnused;
+
   /// How many folder segments — counted after the package root — the project
   /// group is broken up by. 0 keeps the whole path, which is the original
   /// behaviour of [groupProjectByFolder]. Any value above 0 also switches
@@ -60,6 +68,8 @@ class TidyConfig {
     this.testImportPrefixes = defaultTestImportPrefixes,
     this.sortExports = false,
     this.groupProjectByFolderDepth = 0,
+    this.removeDuplicates = false,
+    this.removeUnused = false,
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -132,6 +142,8 @@ class TidyConfig {
       ignoredFiles: ignored,
       customTiers: tiers,
       sortExports: config['sort_exports'] as bool? ?? false,
+      removeDuplicates: config['remove_duplicates'] as bool? ?? false,
+      removeUnused: config['remove_unused'] as bool? ?? false,
       groupProjectByFolderDepth:
           config['group_project_by_folder_depth'] as int? ?? 0,
     );
