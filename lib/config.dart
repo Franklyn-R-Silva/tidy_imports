@@ -69,6 +69,11 @@ class TidyConfig {
   /// the group comments that are this tool's most recognisable output.
   final bool flat;
 
+  /// Whether a `//` comment written directly above a directive moves with it.
+  /// Opt-in: it changes where existing comments end up, and the note above the
+  /// first directive is a file header in either case.
+  final bool attachComments;
+
   /// Whether `package:<self>/…` imports are rewritten as relative paths,
   /// matching the `prefer_relative_imports` lint. Opt-in, and the opposite of
   /// what `always_use_package_imports` wants — the two lints disagree, so the
@@ -99,6 +104,7 @@ class TidyConfig {
     this.flat = false,
     this.relativeImports = false,
     this.reportRoots = const [],
+    this.attachComments = false,
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -182,6 +188,7 @@ class TidyConfig {
       removeUnused: config['remove_unused'] as bool? ?? false,
       flat: config['flat'] as bool? ?? false,
       relativeImports: config['relative_imports'] as bool? ?? false,
+      attachComments: config['attach_comments'] as bool? ?? false,
       reportRoots: reportRoots,
       groupProjectByFolderDepth:
           config['group_project_by_folder_depth'] as int? ?? 0,

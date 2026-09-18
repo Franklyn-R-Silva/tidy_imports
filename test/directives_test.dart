@@ -396,6 +396,111 @@ void main() {}
       );
     });
 
+    test('a note above an import is left behind by default', () {
+      final lines = [
+        "import 'dart:async';",
+        '',
+        '// Package imports:',
+        '// por que este import existe',
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        contains("import 'package:http/http.dart';\n\n// Package imports:"),
+        reason: 'the comment ends up below the block unless asked otherwise',
+      );
+    });
+
+    test('--attach-comments keeps a note with its import', () {
+      final lines = [
+        "import 'dart:async';",
+        '',
+        '// Package imports:',
+        '// por que este import existe',
+        '// e a segunda linha',
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result =
+          sortImports(lines, 'demo', false, false, false, attachComments: true);
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:async';
+
+// Package imports:
+// por que este import existe
+// e a segunda linha
+import 'package:http/http.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('the note above the first import stays a file header', () {
+      final lines = [
+        '// Copyright 2026.',
+        "import 'package:http/http.dart';",
+        "import 'dart:async';",
+        '',
+        'void main() {}',
+      ];
+
+      final result =
+          sortImports(lines, 'demo', false, false, false, attachComments: true);
+
+      expect(result.sortedFile, startsWith('// Copyright 2026.\n\n// Dart'));
+    });
+
+    test('a doc comment is never attached', () {
+      final lines = [
+        "import 'dart:async';",
+        '',
+        '/// Documenta a declaração abaixo.',
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result =
+          sortImports(lines, 'demo', false, false, false, attachComments: true);
+
+      expect(
+        result.sortedFile,
+        isNot(contains('/// Documenta a declaração abaixo.\n'
+            "import 'package:http/http.dart';")),
+      );
+    });
+
+    test('re-running an attached file makes no change', () {
+      const sorted = '''
+// Dart imports:
+import 'dart:async';
+
+// Package imports:
+// por que este import existe
+import 'package:http/http.dart';
+
+void main() {}
+''';
+
+      final result = sortImports(
+          sorted.split('\n'), 'demo', false, false, false,
+          attachComments: true);
+
+      expect(result.updated, isFalse);
+    });
+
     test('re-running a file with an // ignore: pragma makes no change', () {
       const sorted = '''
 // Dart imports:

@@ -182,6 +182,7 @@ prefer the tighter output, `--no-separate-relative-imports` or
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
 | `--flat` | | One alphabetical run per section, no groups — what `directives_ordering` expects (**off by default**) |
 | `--relative-imports` | | Rewrite own-package imports as relative paths (**off by default**) |
+| `--attach-comments` | | Keep a `//` note written above an import with that import (**off by default**) |
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
@@ -230,6 +231,7 @@ tidy_imports:
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
   flat: false            # Default: false — no groups, one alphabetical run per section
   relative_imports: false   # Default: false — rewrite own-package imports as relative
+  attach_comments: false    # Default: false — a note above an import moves with it
   remove_duplicates: false  # Default: false — drop an import written identically twice
   remove_unused: false      # Default: false — run dart fix --code=unused_import first
   report_roots: []          # Default: [] — extra entry points for --report, as regexes

@@ -32,6 +32,7 @@ void main(List<String> args) {
     ..addFlag('remove-duplicates')
     ..addFlag('flat')
     ..addFlag('relative-imports')
+    ..addFlag('attach-comments')
     ..addFlag('remove-unused')
     ..addFlag('group-by-folder')
     ..addOption('group-by-folder-depth', valueHelp: 'n')
@@ -98,6 +99,7 @@ void main(List<String> args) {
   final removeUnused = resolve('remove-unused', config.removeUnused);
   final flat = resolve('flat', config.flat);
   final relativeImports = resolve('relative-imports', config.relativeImports);
+  final attachComments = resolve('attach-comments', config.attachComments);
   final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
   // A depth is a count of folder segments, so anything but a non-negative
@@ -251,6 +253,7 @@ void main(List<String> args) {
       removeDuplicates: removeDuplicates,
       flat: flat,
       relativeImports: relativeImports,
+      attachComments: attachComments,
       libRelativePath: _libRelativePath(currentPath, filePath),
     );
     duplicatesRemoved += result.duplicatesRemoved;
