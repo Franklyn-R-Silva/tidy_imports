@@ -15,20 +15,27 @@ import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
 import 'package:tidy_imports/sort.dart' as sort;
 
 void main(List<String> args) {
+  // Every flag that mirrors a config key is negatable, so `--no-x` can switch
+  // off what the config file switched on. `--no-comments` and
+  // `--no-blank-lines` keep working: they are the negated forms of the
+  // `comments` and `blank-lines` flags, which is exactly how they read before.
+  //
+  // The rest — asking for help, a version, a dry run — describe this
+  // invocation rather than a preference, so there is nothing to negate.
   final parser = ArgParser()
-    ..addFlag('emojis', abbr: 'e', negatable: false)
+    ..addFlag('emojis', abbr: 'e')
+    ..addFlag('comments', defaultsTo: true)
+    ..addFlag('blank-lines', defaultsTo: true)
+    ..addFlag('sort-pubspec')
+    ..addFlag('sort-exports')
+    ..addFlag('group-by-folder')
+    ..addOption('group-by-folder-depth', valueHelp: 'n')
+    ..addFlag('separate-relative-imports')
+    ..addFlag('test-imports')
     ..addFlag('ignore-config', negatable: false)
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
-    ..addFlag('no-comments', negatable: false)
-    ..addFlag('no-blank-lines', negatable: false)
-    ..addFlag('sort-pubspec', negatable: false)
-    ..addFlag('sort-exports', negatable: false)
-    ..addFlag('group-by-folder', negatable: false)
-    ..addOption('group-by-folder-depth', valueHelp: 'n')
-    ..addFlag('separate-relative-imports', negatable: false)
-    ..addFlag('test-imports', negatable: false)
     ..addFlag('dry-run', negatable: false);
 
   final argResults = parser.parse(args);
@@ -67,14 +74,20 @@ void main(List<String> args) {
       ? TidyConfig.fromYaml(null)
       : TidyConfig.load(currentPath, pubspecYaml as YamlMap);
 
-  final emojis = config.emojis || argResults['emojis'] == true;
-  final noComments = config.noComments || argResults['no-comments'] == true;
-  final noBlankLines =
-      config.noBlankLines || argResults['no-blank-lines'] == true;
-  final sortPubspec = config.sortPubspec || argResults['sort-pubspec'] == true;
-  final sortExports = config.sortExports || argResults['sort-exports'] == true;
-  final groupByFolder =
-      config.groupProjectByFolder || argResults['group-by-folder'] == true;
+  // A flag the user actually typed wins; otherwise the config decides. This
+  // used to be `config.x || flag`, which meant a flag could only ever turn
+  // something on — there was no way to opt out of a config key for one run.
+  bool resolve(String flag, bool fromConfig) =>
+      argResults.wasParsed(flag) ? argResults[flag] as bool : fromConfig;
+
+  final emojis = resolve('emojis', config.emojis);
+  // `comments` and `blank-lines` are stated positively on the command line and
+  // negatively inside the sorter, so each crosses over once here.
+  final noComments = !resolve('comments', !config.noComments);
+  final noBlankLines = !resolve('blank-lines', !config.noBlankLines);
+  final sortPubspec = resolve('sort-pubspec', config.sortPubspec);
+  final sortExports = resolve('sort-exports', config.sortExports);
+  final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
   // A depth is a count of folder segments, so anything but a non-negative
   // integer is a user error — reported the way a bad file pattern is, not as
@@ -92,9 +105,16 @@ void main(List<String> args) {
     }
     groupByFolderDepth = parsed;
   }
-  final separateRelativeImports = config.separateRelativeImports ||
-      argResults['separate-relative-imports'] == true;
-  final testImports = config.testImports || argResults['test-imports'] == true;
+
+  // A configured depth turns folder grouping on all by itself, so an explicit
+  // `--no-group-by-folder` has to clear it too or the flag would do nothing.
+  if (argResults.wasParsed('group-by-folder') && !groupByFolder) {
+    groupByFolderDepth = 0;
+  }
+
+  final separateRelativeImports =
+      resolve('separate-relative-imports', config.separateRelativeImports);
+  final testImports = resolve('test-imports', config.testImports);
   final customTiers = config.customTiers;
   final ignoredFiles = config.ignoredFiles;
   final exitOnChange = argResults['exit-if-changed'] == true;
