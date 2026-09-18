@@ -1,22 +1,42 @@
 // Dart imports:
 import 'dart:io';
 
-/// Returns all dart files found in standard project directories.
+/// The directories the sorter walks. Anything else is left alone.
+const standardDirectories = [
+  'lib',
+  'src',
+  'bin',
+  'test',
+  'tests',
+  'test_driver',
+  'integration_test',
+  'packages',
+];
+
+/// Directories the import *report* reads on top of [standardDirectories].
+///
+/// They are never sorted — nobody asked for `example/` to be reformatted — but
+/// a directive in them is still a reason for a `lib/` file to exist. `web/`
+/// holds the only entry point a Dart web project has; `example/` and `tool/`
+/// are pub conventions; `benchmark/` is common. Leaving them out made every
+/// file used only from there look unreferenced.
+const reportDirectories = ['example', 'tool', 'web', 'benchmark'];
+
+/// Returns all dart files found in [standardDirectories], plus any
+/// [extraDirectories].
 ///
 /// Positional [args] are treated as regular expressions matched against the
 /// absolute file path. Throws a [FormatException] with a readable message if a
 /// pattern is not valid — callers are expected to report it and exit.
-Map<String, File> dartFiles(String currentPath, List<String> args) {
+Map<String, File> dartFiles(
+  String currentPath,
+  List<String> args, {
+  List<String> extraDirectories = const [],
+}) {
   final dartFiles = <String, File>{};
   final allContents = [
-    ..._readDir(currentPath, 'lib'),
-    ..._readDir(currentPath, 'src'),
-    ..._readDir(currentPath, 'bin'),
-    ..._readDir(currentPath, 'test'),
-    ..._readDir(currentPath, 'tests'),
-    ..._readDir(currentPath, 'test_driver'),
-    ..._readDir(currentPath, 'integration_test'),
-    ..._readDir(currentPath, 'packages'),
+    for (final dir in standardDirectories) ..._readDir(currentPath, dir),
+    for (final dir in extraDirectories) ..._readDir(currentPath, dir),
   ];
 
   for (final fileOrDir in allContents) {

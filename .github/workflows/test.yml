@@ -40,12 +40,22 @@ jobs:
         run: dart pub publish --dry-run
 
   test:
-    name: test (${{ matrix.sdk }})
-    runs-on: ubuntu-latest
+    # The check names `test (stable)` and `test (beta)` are required by the
+    # branch ruleset; `label` keeps them and only decorates the extra entry.
+    name: test (${{ matrix.sdk }})${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         sdk: [stable, beta]
+        os: [ubuntu-latest]
+        label: ['']
+        # Path-separator bugs kept surfacing on the maintainer's machine and
+        # nowhere in CI: the registrant check, pattern matching, node names.
+        include:
+          - sdk: stable
+            os: windows-latest
+            label: ' on windows'
     steps:
       - uses: actions/checkout@v7
 
@@ -57,11 +67,11 @@ jobs:
         run: dart pub get
 
       - name: Run tests
-        if: matrix.sdk != 'stable'
+        if: matrix.sdk != 'stable' || matrix.os != 'ubuntu-latest'
         run: dart test
 
       - name: Run tests with coverage
-        if: matrix.sdk == 'stable'
+        if: matrix.sdk == 'stable' && matrix.os == 'ubuntu-latest'
         run: |
           dart pub global activate coverage
           dart test --coverage=.coverage
@@ -69,7 +79,7 @@ jobs:
             --lcov --in=.coverage --out=lcov.info --report-on=lib
 
       - name: Check coverage
-        if: matrix.sdk == 'stable'
+        if: matrix.sdk == 'stable' && matrix.os == 'ubuntu-latest'
         run: dart run tool/check_coverage.dart lcov.info 85
 
   min-sdk:

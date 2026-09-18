@@ -2,6 +2,7 @@
 library;
 
 // Dart imports:
+import 'dart:convert';
 import 'dart:io';
 
 // Package imports:
@@ -29,6 +30,8 @@ void main() {
         Platform.resolvedExecutable,
         ['run', cli, ...args],
         workingDirectory: temp.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
       );
 
   File libFile(String name) => File('${temp.path}/lib/$name');
@@ -347,43 +350,269 @@ void main() {}
   });
 
   group('--report', () {
+    String out(List<String> args) => run(args).stdout as String;
+
+    File at(String relative) =>
+        File('${temp.path}/$relative')..parent.createSync(recursive: true);
+
     void writeProject() {
-      libFile('main.dart').writeAsStringSync("import 'a.dart';\n");
-      libFile('a.dart').writeAsStringSync("import 'b.dart';\n");
+      libFile('main.dart')
+          .writeAsStringSync("import 'a.dart';\nvoid main() {}\n");
+      libFile('a.dart').writeAsStringSync("import 'c.dart';\n");
       libFile('b.dart').writeAsStringSync("import 'a.dart';\n");
+      libFile('c.dart').writeAsStringSync("import 'b.dart';\n");
       libFile('dead.dart').writeAsStringSync('class Dead {}\n');
       libFile('model.dart').writeAsStringSync("part 'model.g.dart';\n");
       libFile('model.g.dart').writeAsStringSync("part of 'model.dart';\n");
     }
 
-    test('names the files in a cycle', () {
+    test('draws the cycle along edges that exist, not alphabetically', () {
       writeProject();
+
+      final text = out(['--report']);
+
+      // a imports c, c imports b, b imports a. Alphabetical order would have
+      // claimed a → b, which no file declares.
+      expect(text, contains('1 group of files that import each other'));
+      expect(
+        text,
+        contains('lib/a.dart → lib/c.dart → lib/b.dart → lib/a.dart'),
+      );
+    });
+
+    test('names the rest of a group the walk does not pass through', () {
+      libFile('main.dart')
+          .writeAsStringSync("import 'x.dart';\nvoid main() {}\n");
+      libFile('x.dart')
+          .writeAsStringSync("import 'y.dart';\nimport 'z.dart';\n");
+      libFile('y.dart').writeAsStringSync("import 'x.dart';\n");
+      libFile('z.dart').writeAsStringSync("import 'x.dart';\n");
+
+      expect(
+        out(['--report']),
+        contains(
+            'lib/x.dart → lib/y.dart → lib/x.dart  (+1 more in this group)'),
+      );
+    });
+
+    test('names every file no entry point reaches, parts included', () {
+      writeProject();
+
+      final text = out(['--report']);
+
+      // Nothing reaches dead.dart or model.dart, and model.g.dart is only
+      // reached from model.dart — so all three are dead, and all three are
+      // named: the list is what to delete, and a part goes with its owner.
+      expect(text, contains('3 files no entry point reaches'));
+      expect(text, contains('lib/dead.dart'));
+      expect(text, contains('lib/model.dart'));
+      expect(text, contains('lib/model.g.dart'));
+    });
+
+    test('spares a part whose owner is reachable', () {
+      libFile('main.dart')
+          .writeAsStringSync("import 'model.dart';\nvoid main() {}\n");
+      libFile('model.dart').writeAsStringSync("part 'model.g.dart';\n");
+      libFile('model.g.dart').writeAsStringSync("part of 'model.dart';\n");
+
+      expect(out(['--report']), contains('0 findings'),
+          reason: 'a part is referenced by the file that parts it');
+    });
+
+    test('sees through a dead barrel to what it exports', () {
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      libFile('barrel.dart').writeAsStringSync("export 'inner.dart';\n");
+      libFile('inner.dart').writeAsStringSync('class Inner {}\n');
+
+      final text = out(['--report']);
+
+      expect(text, contains('2 files no entry point reaches'));
+      expect(text, contains('lib/barrel.dart'));
+      expect(text, contains('lib/inner.dart'));
+    });
+
+    test('always prints the caveat under the list', () {
+      writeProject();
+
+      expect(out(['--report']), contains('read before deleting'));
+    });
+
+    test('spares lib/main.dart and flavour mains', () {
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      libFile('main_dev.dart').writeAsStringSync('void main() {}\n');
+      libFile('main_production.dart').writeAsStringSync('void main() {}\n');
+
+      final text = out(['--report']);
+
+      expect(text, contains('0 findings'));
+      expect(text, isNot(contains('main_dev')));
+    });
+
+    test('spares any lib/ file that declares main()', () {
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      libFile('migrate.dart')
+          .writeAsStringSync('Future<void> main() async {}\n');
+      libFile('note.dart').writeAsStringSync('// void main() {}\nclass N {}\n');
+
+      final text = out(['--report']);
+
+      expect(text, isNot(contains('lib/migrate.dart')));
+      expect(text, contains('lib/note.dart'),
+          reason: 'a main() in a comment is not an entry point');
+    });
+
+    test('spares roots declared in report_roots', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync(
+        'name: demo\ntidy_imports:\n  report_roots:\n    - /lib/app/bootstrap\n',
+      );
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      at('lib/app/bootstrap.dart').writeAsStringSync('void boot() {}\n');
+
+      expect(out(['--report']), contains('0 findings'));
+    });
+
+    test('treats every non-src file of a library as public api', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('name: demo\n');
+      libFile('demo.dart').writeAsStringSync("export 'src/impl.dart';\n");
+      libFile('testing.dart').writeAsStringSync('class Testing {}\n');
+      at('lib/src/impl.dart').writeAsStringSync('class Impl {}\n');
+      at('lib/src/old.dart').writeAsStringSync('class Old {}\n');
+
+      final text = out(['--report']);
+
+      expect(text, isNot(contains('lib/testing.dart')));
+      expect(text, contains('lib/src/old.dart'));
+    });
+
+    test('an app (publish_to: none) reports a dead top-level file', () {
+      File('${temp.path}/pubspec.yaml')
+          .writeAsStringSync("name: demo\npublish_to: 'none'\n");
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      libFile('old_screen.dart').writeAsStringSync('class Old {}\n');
+
+      expect(out(['--report']), contains('lib/old_screen.dart'));
+    });
+
+    test('ignored_files narrows what is printed, not what is read', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync(
+        'name: demo\ntidy_imports:\n  ignored_files:\n    - \\.config\\.dart\$\n',
+      );
+      libFile('main.dart').writeAsStringSync(
+          "import 'injection.config.dart';\nvoid main() {}\n");
+      libFile('injection.config.dart')
+          .writeAsStringSync("import 'package:demo/services/foo.dart';\n");
+      at('lib/services/foo.dart').writeAsStringSync('class Foo {}\n');
+
+      expect(out(['--report']), contains('0 findings'),
+          reason: 'the ignored importer still keeps foo.dart alive');
+    });
+
+    test('a generated cycle can be hidden without losing its edges', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync(
+        'name: demo\ntidy_imports:\n  ignored_files:\n    - /lib/l10n/\n',
+      );
+      libFile('main.dart').writeAsStringSync(
+          "import 'l10n/app_localizations.dart';\nvoid main() {}\n");
+      at('lib/l10n/app_localizations.dart').writeAsStringSync(
+          "import 'app_localizations_en.dart';\nimport 'strings.dart';\n");
+      at('lib/l10n/app_localizations_en.dart')
+          .writeAsStringSync("import 'app_localizations.dart';\n");
+      at('lib/l10n/strings.dart').writeAsStringSync('class S {}\n');
+
+      expect(out(['--report']), contains('0 findings'));
+    });
+
+    test(
+        'a positional pattern narrows the report, and keeps a cycle that '
+        'crosses it', () {
+      libFile('main.dart').writeAsStringSync(
+          "import 'features/y.dart';\nimport 'core/a.dart';\nvoid main() {}\n");
+      at('lib/features/y.dart').writeAsStringSync('class Y {}\n');
+      at('lib/features/z.dart').writeAsStringSync("import '../core/a.dart';\n");
+      at('lib/core/a.dart').writeAsStringSync("import '../features/z.dart';\n");
+
+      final text = out(['--report', 'lib/features/']);
+
+      expect(text, contains('1 group of files that import each other'));
+      expect(text, isNot(contains('lib/features/y.dart')),
+          reason: 'main.dart is outside the pattern but still in the graph');
+    });
+
+    test('an importer under example/ keeps a lib/ file alive', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('name: demo\n');
+      libFile('demo.dart').writeAsStringSync('class Demo {}\n');
+      at('lib/src/only_example.dart').writeAsStringSync('class E {}\n');
+      at('example/main.dart').writeAsStringSync(
+          "import 'package:demo/src/only_example.dart';\nvoid main() {}\n");
+
+      expect(out(['--report']), contains('0 findings'));
+    });
+
+    test('every target of a conditional import is an edge', () {
+      libFile('main.dart').writeAsStringSync(
+        "import 'stub.dart'\n"
+        "    if (dart.library.io) 'io_impl.dart'\n"
+        "    if (dart.library.html) 'web_impl.dart';\n"
+        'void main() {}\n',
+      );
+      for (final name in ['stub', 'io_impl', 'web_impl']) {
+        libFile('$name.dart').writeAsStringSync('class Impl {}\n');
+      }
+
+      expect(out(['--report']), contains('0 findings'));
+    });
+
+    test('the plugin registrant is neither sorted nor reported', () {
+      File('${temp.path}/pubspec.lock')
+          .writeAsStringSync('packages:\n  flutter:\n    version: "0.0.0"\n');
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      final registrant = libFile('generated_plugin_registrant.dart')
+        ..writeAsStringSync("import 'dart:io';\nimport 'dart:async';\n");
+
+      expect(out(['--report']), contains('0 findings'));
+      expect(run(['--dry-run']).stdout, isNot(contains('registrant')));
+      expect(registrant.readAsStringSync(), startsWith("import 'dart:io';"));
+    });
+
+    test('resolves package: uris of a sub-package under packages/', () {
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+      at('packages/core/pubspec.yaml').writeAsStringSync('name: core\n');
+      at('packages/core/lib/core.dart')
+          .writeAsStringSync("export 'package:core/b.dart';\n");
+      at('packages/core/lib/a.dart')
+          .writeAsStringSync("import 'package:core/b.dart';\n");
+      at('packages/core/lib/b.dart')
+          .writeAsStringSync("import 'package:core/a.dart';\n");
+      at('packages/core/lib/src/dead.dart').writeAsStringSync('class D {}\n');
+
+      final text = out(['--report']);
+
+      expect(text,
+          contains('packages/core/lib/a.dart → packages/core/lib/b.dart'));
+      expect(text, contains('packages/core/lib/src/dead.dart'));
+    });
+
+    test('a file with invalid utf-8 still takes its place in the graph', () {
+      libFile('main.dart')
+          .writeAsStringSync("import 'latin.dart';\nvoid main() {}\n");
+      libFile('latin.dart').writeAsBytesSync(
+          [...utf8.encode('// caf'), 0xE9, ...utf8.encode('\nclass L {}\n')]);
+
+      final result = run(['--report']);
+
+      expect(result.stderr, isNot(contains('Unhandled')));
+      expect(result.stdout, contains('0 findings'));
+    });
+
+    test('says so when there is nothing to read', () {
+      Directory('${temp.path}/lib').deleteSync(recursive: true);
 
       final result = run(['--report']);
 
       expect(result.exitCode, 0);
-      expect(result.stdout, contains('1 import cycle'));
-      expect(result.stdout, contains('lib/a.dart'));
-      expect(result.stdout, contains('lib/b.dart'));
-    });
-
-    test('names a file nothing refers to, and spares a parted one', () {
-      writeProject();
-
-      final result = run(['--report']);
-
-      expect(result.stdout, contains('lib/dead.dart'));
-      expect(
-        result.stdout,
-        isNot(contains('lib/model.g.dart')),
-        reason: 'a part is referenced by the file that parts it',
-      );
-    });
-
-    test('spares lib/main.dart, which is an entry point', () {
-      writeProject();
-
-      expect(run(['--report']).stdout, isNot(contains('lib/main.dart')));
+      expect(result.stdout, contains('nothing to report'));
+      expect(run(['--report', '--exit-if-changed']).exitCode, 1,
+          reason: 'a gate that inspected nothing must not pass');
     });
 
     test('writes nothing', () {
@@ -397,10 +626,13 @@ void main() {}
       expect(file.readAsStringSync(), unsortedFile);
     });
 
-    test('with --exit-if-changed it fails on a finding', () {
+    test('with --exit-if-changed it fails on a finding and says why', () {
       writeProject();
 
-      expect(run(['--report', '--exit-if-changed']).exitCode, 1);
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('Failing because --exit-if-changed'));
     });
 
     test('with --exit-if-changed a clean project passes', () {
@@ -409,6 +641,20 @@ void main() {}
 
       expect(run(['--report', '--exit-if-changed']).exitCode, 0);
     });
+  });
+
+  test('an unreadable file is one error line, not a stack trace', () {
+    libFile('main.dart').writeAsStringSync(unsorted);
+    libFile('latin.dart').writeAsBytesSync(
+        [...utf8.encode('// caf'), 0xE9, ...utf8.encode('\nclass L {}\n')]);
+
+    final result = run();
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('could not read'));
+    expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+    expect(libFile('main.dart').readAsStringSync(), sorted,
+        reason: 'the readable file is still sorted');
   });
 
   test('reports an invalid file pattern instead of crashing', () {

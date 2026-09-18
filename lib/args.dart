@@ -68,12 +68,14 @@ Options
 
 Run modes
       --report                   Read the project's own import graph and say
-                                 what it found: import cycles, and files under
-                                 lib/ that nothing refers to. Sorts nothing,
-                                 writes nothing. Add --exit-if-changed to fail
-                                 a CI run on a finding.
+                                 what it found: files that import each other,
+                                 and files under lib/ no entry point reaches.
+                                 Sorts nothing, writes nothing. Patterns and
+                                 ignored_files narrow what is printed, never
+                                 what is read.
       --dry-run                  Report what would change; write nothing.
-      --exit-if-changed          Exit 1 if anything is unsorted. For CI.
+      --exit-if-changed          Exit 1 if anything is unsorted — or, with
+                                 --report, on any finding. For CI.
       --ignore-config            Ignore tidy_imports.yaml and the pubspec block.
   -h, --help                     Show this message.
   -v, --version                  Show the version.

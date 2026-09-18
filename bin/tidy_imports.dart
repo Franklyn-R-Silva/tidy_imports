@@ -141,10 +141,13 @@ void main(List<String> args) {
     exit(1);
   }
 
+  // Matched on the normalised relative path, the way ignored_files are: the
+  // keys use the platform separator, so an exact-string check against a
+  // '/'-joined path never matched on Windows and the registrant got sorted.
   final containsFlutter = dependencies.contains('flutter');
-  final registrantPath = '$currentPath/lib/generated_plugin_registrant.dart';
-  if (containsFlutter && dartFiles.containsKey(registrantPath)) {
-    dartFiles.remove(registrantPath);
+  if (containsFlutter) {
+    dartFiles.removeWhere((key, _) =>
+        files.toPosix(key.replaceFirst(currentPath, '')) == _registrant);
   }
 
   // `ignored_files` patterns are regular expressions too, and a malformed one
@@ -170,10 +173,19 @@ void main(List<String> args) {
   final readOnly = dryRun || exitOnChange;
 
   // `--report` answers questions about the project rather than tidying it, so
-  // it runs on its own and writes nothing at all.
+  // it runs on its own and writes nothing at all. It also discovers on its
+  // own: the file set above is what the *sorter* touches, and using it as the
+  // graph's node set deleted every edge leaving a filtered-out file.
   if (argResults['report'] == true) {
-    exit(_report(dartFiles, currentPath, packageName,
-        failOnFindings: exitOnChange));
+    exit(_report(
+      currentPath,
+      packageName,
+      pubspecYaml as YamlMap,
+      patterns: argResults.rest,
+      ignoreMatchers: ignoreMatchers,
+      reportRoots: config.reportRoots,
+      failOnFindings: exitOnChange,
+    ));
   }
 
   final label = readOnly ? 'Checking' : 'Sorting';
@@ -183,6 +195,7 @@ void main(List<String> args) {
   final stopwatch = Stopwatch()..start();
   final sortedFiles = <String>[];
   var duplicatesRemoved = 0;
+  var unreadable = 0;
   final success = '✔'.green();
 
   // Whether an import is *used* is a question about resolved elements, not
@@ -200,7 +213,21 @@ void main(List<String> args) {
 
     // Preserve the file's original line ending (CRLF on Windows) instead of
     // silently rewriting to LF, which creates spurious diffs and git noise.
-    final rawContent = file.readAsStringSync();
+    final String rawContent;
+    try {
+      rawContent = file.readAsStringSync();
+    } on FileSystemException catch (e) {
+      // A Latin-1 file, or one we may not read. Skipping it is safe here —
+      // it simply stays unsorted — but it is still an error, reported once.
+      // The header line above is still open; close it before the first error.
+      stderr.writeln(
+        '${unreadable == 0 ? '\n' : ''}Error: could not read '
+        '${files.toPosix(filePath.replaceFirst(currentPath, ''))}: '
+        '${e.osError?.message ?? e.message}',
+      );
+      unreadable++;
+      continue;
+    }
     final usesCrlf = rawContent.contains('\r\n');
 
     // The third positional argument is the deprecated, inert `exitIfChanged`.
@@ -275,6 +302,11 @@ void main(List<String> args) {
           exitOnChange ? 'Needs sorting:' : (dryRun ? 'Would sort' : 'Sorted');
       stdout.writeln('$success $pubspecVerb pubspec.yaml dependencies');
     }
+  }
+
+  if (unreadable > 0) {
+    stderr.writeln('\n🚨 $unreadable file(s) could not be read.');
+    exit(1);
   }
 
   // In CI mode, fail after reporting everything that needs attention.
@@ -358,63 +390,197 @@ String? _libRelativePath(String projectPath, String filePath) {
   return relative.startsWith(lib) ? relative.substring(lib.length) : null;
 }
 
+/// The Flutter web plugin registrant, generated and self-contained.
+const _registrant = '/lib/generated_plugin_registrant.dart';
+
 /// Prints what the project's own import graph says about it.
 ///
 /// Returns the exit code: 1 when [failOnFindings] and something was found, so
-/// `--report --exit-if-changed` can hold a line in CI, 0 otherwise.
+/// `--report --exit-if-changed` can hold a line in CI, 0 otherwise. Also 1
+/// when a file could not be read at all — a graph missing a node is missing
+/// every edge that left it, which turns a crash into a wrong answer.
+///
+/// Discovery is the report's own and wider than the sorter's:
+/// [files.reportDirectories] hold importers nobody wants reformatted.
+/// [patterns] and [ignoreMatchers] narrow what is *printed*, never what is
+/// *read* — a filter that removed nodes also removed their edges, and
+/// everything they imported looked dead.
 int _report(
-  Map<String, File> dartFiles,
   String currentPath,
-  String packageName, {
+  String packageName,
+  YamlMap pubspec, {
+  required List<String> patterns,
+  required List<RegExp> ignoreMatchers,
+  required List<String> reportRoots,
   required bool failOnFindings,
 }) {
-  final directives = <String, List<String>>{};
-  for (final entry in dartFiles.entries) {
-    final path = files
-        .toPosix(entry.key.replaceFirst(currentPath, ''))
-        .replaceFirst(RegExp('^/'), '');
-    directives[path] = sort.directiveUris(
-        const LineSplitter().convert(entry.value.readAsStringSync()));
+  final scanned = files.dartFiles(
+    currentPath,
+    const [],
+    extraDirectories: files.reportDirectories,
+  );
+
+  if (scanned.isEmpty) {
+    final dirs = [...files.standardDirectories, ...files.reportDirectories];
+    stdout.writeln('┏━━ Reading the import graph');
+    stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under ${dirs.join(', ')} '
+        '— nothing to report');
+    if (failOnFindings) {
+      stderr.writeln('🚨 --exit-if-changed with nothing to check. '
+          'Run from the project root.');
+      return 1;
+    }
+    return 0;
   }
 
-  final graph = ImportGraph.build(directives, packageName);
-  final cycles = graph.cycles();
+  // Positional patterns were compiled once already in main(); a bad one has
+  // exited by now, so this cannot throw.
+  final scopeMatchers = files.compilePatterns(patterns, 'file pattern');
+  final List<RegExp> rootMatchers;
+  try {
+    rootMatchers = files.compilePatterns(reportRoots, 'report_roots entry');
+  } on FormatException catch (e) {
+    stderr.writeln('Error: ${e.message}');
+    return 1;
+  }
 
-  // An entry point is unreferenced by definition. `lib/<package>.dart` is the
-  // package's public face, `lib/main.dart` an app's; everything outside `lib/`
-  // is already excluded by [ImportGraph.unreferenced].
-  final orphans = graph.unreferenced(roots: {
-    'lib/$packageName.dart',
+  // Node names: project-relative, '/'-separated, no leading slash.
+  String relative(String absolute) => files
+      .toPosix(absolute.replaceFirst(currentPath, ''))
+      .replaceFirst(RegExp('^/'), '');
+
+  final directives = <String, List<String>>{};
+  final absolutes = <String, String>{};
+  final mains = <String>{};
+  final unreadable = <String>[];
+  for (final entry in scanned.entries) {
+    final path = relative(entry.key);
+    absolutes[path] = files.toPosix(entry.key);
+    final List<String> lines;
+    try {
+      // Directives are ASCII. A Latin-1 comment must not cost the file its
+      // place in the graph, so decode leniently instead of failing.
+      lines = const LineSplitter().convert(
+        utf8.decode(entry.value.readAsBytesSync(), allowMalformed: true),
+      );
+    } on FileSystemException catch (e) {
+      unreadable.add('$path: ${e.osError?.message ?? e.message}');
+      continue;
+    }
+    directives[path] = sort.directiveUris(lines);
+    if (sort.declaresMain(lines)) mains.add(path);
+  }
+
+  if (unreadable.isNotEmpty) {
+    for (final failure in unreadable) {
+      stderr.writeln('Error: could not read $failure');
+    }
+    stderr.writeln('🚨 ${unreadable.length} file(s) could not be read; a graph '
+        'with a node missing would report every file it imports as dead.');
+    return 1;
+  }
+
+  final packages = _subPackages(currentPath);
+  final graph = ImportGraph.build(directives, packageName, packages: packages);
+
+  // An entry point is unreferenced by definition. `flutter create` writes
+  // `publish_to: none`, so a package that says so — or that has lib/main.dart
+  // — is an app; anything else is a library, whose public surface is every
+  // file outside lib/src (pub convention) and is imported by consumers, not
+  // by itself.
+  final isApp = '${pubspec['publish_to']}' == 'none' ||
+      directives.containsKey('lib/main.dart');
+  final roots = <String>{
     'lib/main.dart',
-  });
+    'lib/$packageName.dart',
+    _registrant.substring(1),
+    ...mains,
+    for (final entry in packages.entries) ...[
+      '${entry.key}/lib/${entry.value}.dart',
+      '${entry.key}/lib/main.dart',
+    ],
+  };
+  final flavourMain = RegExp(r'^(?:.*/)?lib/main_[a-z0-9_]+\.dart$');
+  for (final path in directives.keys) {
+    final libRoot = graph.libraryRoot(path);
+    if (libRoot == null) continue;
+    if (flavourMain.hasMatch(path)) roots.add(path);
+    // A sub-package's app-ness is unknown; treating it as a library is the
+    // conservative side, since it reports less.
+    final isLibrary = libRoot != 'lib/' || !isApp;
+    if (isLibrary && !path.startsWith('${libRoot}src/')) roots.add(path);
+    if (rootMatchers.any((m) => m.hasMatch('/$path'))) roots.add(path);
+  }
+
+  bool inScope(String path) =>
+      (scopeMatchers.isEmpty ||
+          scopeMatchers.any((m) => m.hasMatch(absolutes[path]!))) &&
+      !ignoreMatchers.any((m) => m.hasMatch('/$path'));
+
+  final groups = graph.cycles().where((g) => g.any(inScope)).toList();
+  final dead = graph.unreachable(roots: roots).where(inScope).toList();
 
   stdout.writeln('┏━━ Reading the import graph of ${directives.length} files');
 
-  if (cycles.isEmpty) {
+  if (groups.isEmpty) {
     stdout.writeln('┃  ${'✔'.green()} No import cycles');
   } else {
-    stdout.writeln('┃  ${'✖'.red()} ${cycles.length} import '
-        '${cycles.length == 1 ? 'cycle' : 'cycles'}:');
-    for (final cycle in cycles) {
-      stdout.writeln('┃     ${cycle.join(' → ')} → ${cycle.first}');
+    stdout.writeln('┃  ${'✖'.red()} ${groups.length} '
+        '${groups.length == 1 ? 'group' : 'groups'} of files that import '
+        'each other:');
+    for (final group in groups) {
+      final walk = graph.cycleWalk(group);
+      final rest = group.length - walk.length;
+      stdout.writeln('┃     ${walk.join(' → ')} → ${walk.first}'
+          '${rest > 0 ? '  (+$rest more in this group)' : ''}');
     }
   }
 
-  if (orphans.isEmpty) {
-    stdout.writeln('┃  ${'✔'.green()} Every file under lib/ is referenced');
+  if (dead.isEmpty) {
+    stdout.writeln('┃  ${'✔'.green()} Every file under lib/ is reachable '
+        'from an entry point');
   } else {
-    stdout.writeln('┃  ${'!'.yellow()} ${orphans.length} '
-        '${orphans.length == 1 ? 'file' : 'files'} nothing refers to:');
-    for (final orphan in orphans) {
-      stdout.writeln('┃     $orphan');
+    stdout.writeln('┃  ${'!'.yellow()} ${dead.length} '
+        '${dead.length == 1 ? 'file' : 'files'} no entry point reaches:');
+    for (final path in dead) {
+      stdout.writeln('┃     $path');
     }
     stdout.writeln('┃     (build_runner, reflection and dynamic loading are '
         'invisible here — read before deleting)');
   }
 
-  final findings = cycles.length + orphans.length;
+  final findings = groups.length + dead.length;
   stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
       '$findings ${findings == 1 ? 'finding' : 'findings'}');
 
-  return failOnFindings && findings > 0 ? 1 : 0;
+  if (failOnFindings && findings > 0) {
+    stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
+        'in the import graph. Failing because --exit-if-changed was passed.');
+    return 1;
+  }
+  return 0;
+}
+
+/// Every sub-package under `packages/`, as directory -> name, read from each
+/// one's pubspec. Without this a monorepo's `package:core/x.dart` never
+/// resolved, and its cycles and dead files were silently invisible.
+Map<String, String> _subPackages(String currentPath) {
+  final found = <String, String>{};
+  final root = Directory('$currentPath/packages');
+  if (!root.existsSync()) return found;
+
+  for (final entity in root.listSync(recursive: true)) {
+    if (entity is! File || !entity.path.endsWith('pubspec.yaml')) continue;
+    final dir = files
+        .toPosix(entity.parent.path.replaceFirst(currentPath, ''))
+        .replaceFirst(RegExp('^/'), '');
+    if (dir.contains('/.') || dir.contains('/build/')) continue;
+    try {
+      final name = (loadYaml(entity.readAsStringSync()) as YamlMap?)?['name'];
+      if (name is String) found[dir] = name;
+    } on Object {
+      // A pubspec that does not parse belongs to no package we can name.
+    }
+  }
+  return found;
 }

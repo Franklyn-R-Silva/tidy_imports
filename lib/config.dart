@@ -45,6 +45,13 @@ class TidyConfig {
   final List<String> ignoredFiles;
   final List<CustomTier> customTiers;
 
+  /// Extra entry points for `--report`, as regular expressions matched against
+  /// the project-relative path (`/lib/app/bootstrap.dart`). An entry point is
+  /// unreferenced by definition, so anything the report cannot recognise on
+  /// its own — a file run with `dart run lib/tool.dart`, a flavour main in a
+  /// subfolder — is declared here rather than reported forever.
+  final List<String> reportRoots;
+
   /// Whether `export` directives are sorted into their own block. Opt-in: on
   /// by default it would rewrite the barrel file of every existing project.
   final bool sortExports;
@@ -91,6 +98,7 @@ class TidyConfig {
     this.removeUnused = false,
     this.flat = false,
     this.relativeImports = false,
+    this.reportRoots = const [],
   });
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
@@ -125,6 +133,13 @@ class TidyConfig {
     if (config['ignored_files'] != null) {
       for (final pattern in config['ignored_files'] as YamlList) {
         ignored.add(pattern as String);
+      }
+    }
+
+    final reportRoots = <String>[];
+    if (config['report_roots'] != null) {
+      for (final pattern in config['report_roots'] as YamlList) {
+        reportRoots.add(pattern as String);
       }
     }
 
@@ -167,6 +182,7 @@ class TidyConfig {
       removeUnused: config['remove_unused'] as bool? ?? false,
       flat: config['flat'] as bool? ?? false,
       relativeImports: config['relative_imports'] as bool? ?? false,
+      reportRoots: reportRoots,
       groupProjectByFolderDepth:
           config['group_project_by_folder_depth'] as int? ?? 0,
     );
