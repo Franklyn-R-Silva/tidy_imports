@@ -1,17 +1,27 @@
 // Dart imports:
 import 'dart:io';
 
-/// Fails when CHANGELOG.md does not open on the version in pubspec.yaml, or
-/// when its version headings are not in descending order.
+/// Fails when the three places a version lives disagree, or when CHANGELOG.md
+/// is out of order.
 ///
-/// Both have gone wrong here before: 1.2.0 sat above 1.3.0, and Release Please
-/// later inserted 1.4.1 below 1.4.0. pub.dev renders the file top-down, so the
-/// wrong version reads as the current one.
+/// `pubspec.yaml`, `lib/src/version.dart` and the top CHANGELOG.md section are
+/// bumped by hand, so nothing but this check keeps `--version` from reporting
+/// a release that never happened. Ordering is checked too: 1.2.0 once sat
+/// above 1.3.0, and 1.4.1 below 1.4.0 — pub.dev renders the file top-down, so
+/// the wrong version reads as the current one.
 ///
-/// Run: `dart run tool/check_changelog.dart`
+/// Run: `dart run tool/check_version_sync.dart`
 void main() {
   final version = _pubspecVersion();
+  final constant = _versionConstant();
   final headings = _changelogVersions();
+
+  if (constant != version) {
+    _fail(
+      'lib/src/version.dart says $constant, but pubspec.yaml says $version. '
+      'Both move together.',
+    );
+  }
 
   if (headings.isEmpty) {
     _fail('CHANGELOG.md has no `## <version>` heading.');
@@ -34,8 +44,8 @@ void main() {
   }
 
   stdout.writeln(
-    '✔ CHANGELOG.md opens on $version; ${headings.length} sections, '
-    'newest first.',
+    '✔ $version in pubspec.yaml, lib/src/version.dart and CHANGELOG.md; '
+    '${headings.length} sections, newest first.',
   );
 }
 
@@ -43,6 +53,14 @@ String _pubspecVersion() {
   final match = RegExp(r'^version:\s*(\S+)', multiLine: true)
       .firstMatch(File('pubspec.yaml').readAsStringSync());
   if (match == null) _fail('pubspec.yaml has no `version:` line.');
+  return match.group(1)!;
+}
+
+/// The `packageVersion` constant `--version` prints.
+String _versionConstant() {
+  final match = RegExp(r"packageVersion\s*=\s*'([^']+)'")
+      .firstMatch(File('lib/src/version.dart').readAsStringSync());
+  if (match == null) _fail('lib/src/version.dart has no packageVersion.');
   return match.group(1)!;
 }
 

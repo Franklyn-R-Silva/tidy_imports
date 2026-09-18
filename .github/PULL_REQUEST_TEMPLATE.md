@@ -1,7 +1,7 @@
 <!--
   Thanks for contributing to tidy_imports!
   Please use a Conventional Commit title (e.g. "feat: add X", "fix: handle Y")
-  so Release Please can version the change automatically.
+  so the history stays readable and the next version bump is obvious.
 -->
 
 ## What does this PR do?

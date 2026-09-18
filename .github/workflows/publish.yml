@@ -2,21 +2,21 @@ name: publish
 
 # Publishes to pub.dev over OIDC — no long-lived pub.dev token lives here.
 #
-# TWO one-time preconditions, and the release is manual until both are met:
+# ONE one-time precondition:
 #
-# 1. pub.dev -> tidy_imports -> Admin -> Automated publishing:
-#      Repository:  Franklyn-R-Silva/tidy_imports
-#      Tag pattern: v{{version}}
-#    Without it this job fails with a permission error.
+#   pub.dev -> tidy_imports -> Admin -> Automated publishing:
+#     Repository:  Franklyn-R-Silva/tidy_imports
+#     Tag pattern: v{{version}}
 #
-# 2. A RELEASE_PLEASE_TOKEN secret — a PAT with `repo` scope — so that
-#    release-please.yml pushes the tag as a user rather than as the default
-#    GITHUB_TOKEN. GitHub deliberately does not trigger workflows from pushes
-#    made with GITHUB_TOKEN, so a tag created with it reaches this file and
-#    does nothing at all. That is why v1.5.0 went out by hand.
+# Without it this job fails with a permission error and nothing is published;
+# `dart pub publish` by hand still works.
 #
-# Until then: run this workflow from the Actions tab, picking the tag in the
-# "Use workflow from" dropdown, or publish with `dart pub publish`.
+# Tags are pushed by a person now, and a person's push does trigger workflows —
+# unlike a push made with the default GITHUB_TOKEN, which is why the automated
+# release of v1.5.0 never reached this file. See CONTRIBUTING.md for the steps.
+#
+# workflow_dispatch is kept as an escape hatch: pick the tag in the
+# "Use workflow from" dropdown to publish a tag that already exists.
 
 on:
   push:

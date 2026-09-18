@@ -25,10 +25,12 @@ jobs:
       - name: Analyze
         run: dart analyze --fatal-infos
 
-      # pub.dev renders CHANGELOG.md top-down, so a section in the wrong place
-      # advertises the wrong version as current. It has happened twice here.
-      - name: Check CHANGELOG order
-        run: dart run tool/check_changelog.dart
+      # Versions are bumped by hand, so nothing else stops pubspec.yaml,
+      # lib/src/version.dart and CHANGELOG.md from drifting apart. Ordering is
+      # checked too: pub.dev renders the changelog top-down, so a section in
+      # the wrong place advertises the wrong version as current.
+      - name: Check version sync
+        run: dart run tool/check_version_sync.dart
 
       - name: Run tests with coverage
         run: |

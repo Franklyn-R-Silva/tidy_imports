@@ -4,7 +4,7 @@
 //
 // The generated file is gitignored (it's a build artifact) and is NOT read by
 // the CLI: `--version` prints the constant in lib/src/version.dart, which IS in
-// git and updated by Release Please. This output is for local inspection and
+// git and bumped by hand at release time. This output is for local inspection and
 // packaging scripts.
 
 // Dart imports:
