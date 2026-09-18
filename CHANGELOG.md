@@ -1,3 +1,37 @@
+## [1.5.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.1...v1.5.0) (2026-09-18)
+
+A line that only *looks* like a directive is no longer treated as one. An
+`import` commented out inside a `/* */` block used to be hoisted out of the
+comment and into the sorted block, turning a disabled import back into a live
+one. The scanner knew about triple-quoted strings and nothing else; it now
+carries real state across lines, nested `/* */` included.
+
+File patterns work as documented. A positional pattern engaged only when one of
+them ended in the literal text `dart`, so `tidy_imports "lib/src/"` sorted the
+whole project instead of that folder, without saying so — and since patterns
+were matched against raw paths, a forward-slash pattern never matched anything
+on Windows. Write them with `/` on every platform now.
+
+Flags can switch things off, not only on. Resolution was `config || flag`, so
+whatever your `tidy_imports:` block enabled was enabled for every run;
+`--no-emojis`, `--comments` and the rest let a single run disagree with the
+config file.
+
+### Features
+
+* every config-backed flag is negatable ([b5f8494](https://github.com/Franklyn-R-Silva/tidy_imports/commit/b5f8494d911bc756e10b630747251e63e2e894b5))
+
+### Bug Fixes
+
+* an import inside a comment or a string is no longer moved ([5ee96fd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ee96fdf103c5fe53972c1c1ee4ef3bc3b041dd3))
+* any positional argument filters, and patterns match on Windows ([5ee96fd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ee96fdf103c5fe53972c1c1ee4ef3bc3b041dd3))
+* a malformed `ignored_files` entry is reported, not thrown ([5ee96fd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ee96fdf103c5fe53972c1c1ee4ef3bc3b041dd3))
+* `sortImports` never calls `exit()`; `exitIfChanged` and `filePath` are deprecated and inert ([5ee96fd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ee96fdf103c5fe53972c1c1ee4ef3bc3b041dd3))
+
+### Tooling
+
+* releases publish from a `vX.Y.Z` tag over OIDC, and CI now guards changelog order, line coverage and package validity ([17ad384](https://github.com/Franklyn-R-Silva/tidy_imports/commit/17ad384))
+
 ## [1.4.1](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.0...v1.4.1) (2026-09-18)
 
 
