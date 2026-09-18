@@ -63,21 +63,43 @@ import 'another_file.dart';
 
 ## Installation
 
-### As a dev dependency (per project)
+`tidy_imports` is a tool you run *over* your source, never something your app
+imports at runtime. It belongs in **`dev_dependencies`** — put it in
+`dependencies` and you ship a sorting tool inside your app.
+
+### In a project (recommended)
 
 ```sh
 dart pub add dev:tidy_imports
+```
+
+Flutter projects use `flutter pub add dev:tidy_imports`. Either way it lands in
+the right section, at the current version:
+
+```yaml
+dev_dependencies:
+  tidy_imports: ^1.5.0
+```
+
+Then, from the project root:
+
+```sh
 dart run tidy_imports
 ```
 
-This adds the latest version to `dev_dependencies` for you.
+This is the form to prefer: the version is pinned in `pubspec.yaml`, so your
+machine, your teammates' machines and CI all sort with the same rules.
 
-### Global activation
+### Globally
 
 ```sh
 dart pub global activate tidy_imports
 tidy_imports
 ```
+
+Good for a one-off run on a project you do not want to touch the `pubspec.yaml`
+of. The version is whatever you activated last, which is exactly why it is the
+second choice.
 
 ## Usage
 
@@ -537,7 +559,7 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | pre-commit hook | `language: script` (broken) | `language: system` (works) |
 | Dart SDK | `>=2.12.0` | `>=3.0.0` |
 | Conditional imports | Misclassified | Handled correctly |
-| Versioning | Manual | Automated via Release Please |
+| Versioning | Manual | Manual, with CI refusing a mismatch |
 
 ## Contributing
 
