@@ -252,11 +252,16 @@ int _min(int a, int b) => a < b ? a : b;
 
 /// The project file [uri] points at, or null when it points outside.
 ///
-/// Two forms name a project file: a `package:` URI of the root package or of
-/// one of [packages], and a path relative to [from]. Both go through the same
-/// segment walk, so `.`, `..` and empty segments mean the same thing in each.
-/// A URI starting with `/` is null — Dart has no root-relative form — and so
-/// is one that climbs above the project.
+/// Three forms name a project file: a `package:` URI of the root package or
+/// of one of [packages], a path relative to [from], and a root-relative one.
+/// All go through the same segment walk, so `.`, `..` and empty segments mean
+/// the same thing in each; a URI climbing above the project is null.
+///
+/// Root-relative means a leading `/`, which Dart resolves against the `lib/`
+/// of the importing file's own package — `export '/features/x.dart'` from
+/// `lib/index.dart` is `package:<self>/features/x.dart`. FlutterFlow writes
+/// its barrels this way, so dropping the form made every file such a barrel
+/// exported look unreachable.
 String? resolveUri(
   String uri, {
   required String from,
@@ -265,11 +270,16 @@ String? resolveUri(
 }) {
   if (uri.startsWith('dart:')) return null;
   if (uri.startsWith('http:') || uri.startsWith('https:')) return null;
-  if (uri.startsWith('/')) return null;
 
   final List<String> base;
   final String rest;
-  if (uri.startsWith('package:')) {
+  if (uri.startsWith('/')) {
+    final root = _libRootOf(from, packages);
+    // Outside a lib/ there is no package root to be relative to.
+    if (root == null) return null;
+    base = root;
+    rest = uri.substring(1);
+  } else if (uri.startsWith('package:')) {
     final slash = uri.indexOf('/');
     if (slash < 0) return null;
     final name = uri.substring('package:'.length, slash);
@@ -303,4 +313,18 @@ String? resolveUri(
     parts.add(segment);
   }
   return parts.isEmpty ? null : parts.join('/');
+}
+
+/// The `lib/` of the package holding [from], as path segments, or null when
+/// [from] lives outside every one.
+List<String>? _libRootOf(String from, Map<String, String> packages) {
+  List<String>? best;
+  for (final dir in [...packages.keys, '']) {
+    final prefix = dir.isEmpty ? 'lib/' : '$dir/lib/';
+    if (from.startsWith(prefix) &&
+        (best == null || prefix.length > best.join('/').length + 1)) {
+      best = prefix.split('/')..removeLast();
+    }
+  }
+  return best;
 }
