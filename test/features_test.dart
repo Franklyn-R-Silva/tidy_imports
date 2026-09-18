@@ -646,11 +646,31 @@ import 'dart:io';
       expect(config.noBlankLines, isFalse);
       expect(config.sortPubspec, isFalse);
       expect(config.groupProjectByFolder, isFalse);
-      expect(config.separateRelativeImports, isFalse);
       expect(config.ignoredFiles, isEmpty);
       expect(config.customTiers, isEmpty);
       expect(config.testImports, isFalse);
       expect(config.testImportPrefixes, ['fake_', 'mock_']);
+      expect(config.sortExports, isFalse);
+      expect(config.removeDuplicates, isFalse);
+      expect(config.removeUnused, isFalse);
+      expect(config.flat, isFalse);
+      expect(config.relativeImports, isFalse);
+    });
+
+    test('separate_relative_imports is the one default that is on', () {
+      expect(
+        TidyConfig.fromYaml(null).separateRelativeImports,
+        isTrue,
+        reason: 'dart format 3.13+ writes that blank line itself; off, the '
+            'two tools undo each other every run (issue #1)',
+      );
+    });
+
+    test('separate_relative_imports can be turned off in config', () {
+      final config =
+          TidyConfig.fromYaml(loadYaml('separate_relative_imports: false'));
+
+      expect(config.separateRelativeImports, isFalse);
     });
 
     test('reads test import settings', () {

@@ -42,6 +42,8 @@ Options
       --separate-relative-imports
                                  Blank line between `package:` and relative
                                  project imports, matching dart format 3.13+.
+                                 ON by default — pass the --no- form to stop it.
+                                 It is the only option here that starts on.
       --test-imports             Give project files named fake_* / mock_* their
                                  own "Test imports:" group, written last.
       --flat                     Drop the groups: one alphabetical run per

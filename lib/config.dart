@@ -31,6 +31,14 @@ class TidyConfig {
   final bool noBlankLines;
   final bool sortPubspec;
   final bool groupProjectByFolder;
+
+  /// Whether a blank line separates the `package:<self>/…` and relative halves
+  /// of the project group.
+  ///
+  /// **On by default**, and the only option here that is. It is not a matter of
+  /// taste: since 3.13 `dart format` inserts that blank line itself, so with
+  /// this off the two tools undo each other's work on every single run
+  /// (issue #1). Under `blank_lines: false` it is suppressed anyway.
   final bool separateRelativeImports;
   final bool testImports;
   final List<String> testImportPrefixes;
@@ -74,7 +82,7 @@ class TidyConfig {
     required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
-    this.separateRelativeImports = false,
+    this.separateRelativeImports = true,
     this.testImports = false,
     this.testImportPrefixes = defaultTestImportPrefixes,
     this.sortExports = false,
@@ -148,7 +156,7 @@ class TidyConfig {
       sortPubspec: config['sort_pubspec'] as bool? ?? false,
       groupProjectByFolder: config['group_project_by_folder'] as bool? ?? false,
       separateRelativeImports:
-          config['separate_relative_imports'] as bool? ?? false,
+          config['separate_relative_imports'] as bool? ?? true,
       testImports: config['test_imports'] as bool? ?? false,
       testImportPrefixes:
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,

@@ -136,6 +136,37 @@ Write patterns with **forward slashes on every platform**, Windows included —
 paths are normalised before matching. With no pattern, the whole project is
 sorted.
 
+## What is on by default
+
+Almost nothing. `tidy_imports` sorts and groups your imports and changes
+nothing else about the file unless you ask it to — no deleting, no rewriting,
+no touching `pubspec.yaml`.
+
+| On by default | Why |
+|---|---|
+| Group comments (`// Dart imports:` …) | The point of the tool. `--no-comments` drops them |
+| Blank line between groups | Readability. `--no-blank-lines` drops it |
+| **Blank line before relative project imports** | Not taste — see below. `--no-separate-relative-imports` drops it |
+
+Everything else — sorting exports, sorting `pubspec.yaml`, grouping by folder,
+splitting out test doubles, removing duplicates, removing unused imports, flat
+ordering, relative rewriting — is **off** until you turn it on, by flag or by
+config key. Every flag is negatable, so a config file is never the last word:
+`--no-<flag>` overrides it for one run.
+
+### Why that third one is on
+
+Since Dart 3.13, `dart format` puts a blank line between the `package:` and
+relative sections itself. With this off, `tidy_imports` removes the line and
+`dart format` puts it back, forever — every run of either tool produces a diff
+(issue #1). Turning it on by default is a bug fix wearing the clothes of a
+preference.
+
+It does nothing when you have no relative project imports, and it is suppressed
+entirely under `--no-blank-lines`. If your project pins Dart below 3.13 and you
+prefer the tighter output, `--no-separate-relative-imports` or
+`separate_relative_imports: false` restores it.
+
 ## Options
 
 | Flag | Short | Description |
@@ -152,7 +183,7 @@ sorted.
 | `--relative-imports` | | Rewrite own-package imports as relative paths (**off by default**) |
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
-| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
+| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -193,7 +224,7 @@ tidy_imports:
   sort_exports: false    # Default: false — also sort export directives
   group_project_by_folder: false  # Default: false — split project imports by folder
   group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
-  separate_relative_imports: false  # Default: false — blank line before relative imports
+  separate_relative_imports: true   # Default: TRUE — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
   flat: false            # Default: false — no groups, one alphabetical run per section
   relative_imports: false   # Default: false — rewrite own-package imports as relative
