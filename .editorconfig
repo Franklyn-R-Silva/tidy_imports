@@ -1,0 +1,20 @@
+# Companion to .gitattributes: that one settles line endings in git, this one
+# settles what an editor writes in the first place.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.dart]
+# `dart format` hard-wraps at 80; matching it here keeps the ruler honest.
+max_line_length = 80
+
+[*.md]
+# Two trailing spaces are a line break in Markdown.
+trim_trailing_whitespace = false

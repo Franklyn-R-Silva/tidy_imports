@@ -7,7 +7,8 @@ on:
     branches: [master, main]
 
 jobs:
-  test:
+  check:
+    name: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +33,35 @@ jobs:
       - name: Check version sync
         run: dart run tool/check_version_sync.dart
 
+      # Catches packaging problems — a missing file, a bad pubspec, an oversized
+      # archive — on the PR instead of at release time, when the version is
+      # already tagged and the mistake is permanent.
+      - name: Validate the published package
+        run: dart pub publish --dry-run
+
+  test:
+    name: test (${{ matrix.sdk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Run tests
+        if: matrix.sdk != 'stable'
+        run: dart test
+
       - name: Run tests with coverage
+        if: matrix.sdk == 'stable'
         run: |
           dart pub global activate coverage
           dart test --coverage=.coverage
@@ -40,10 +69,35 @@ jobs:
             --lcov --in=.coverage --out=lcov.info --report-on=lib
 
       - name: Check coverage
+        if: matrix.sdk == 'stable'
         run: dart run tool/check_coverage.dart lcov.info 85
 
-      # Catches packaging problems — a missing file, a bad pubspec, an oversized
-      # archive — on the PR instead of at release time, when the version is
-      # already tagged and the mistake is permanent.
-      - name: Validate the published package
-        run: dart pub publish --dry-run
+  min-sdk:
+    name: min SDK (3.0.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.0.0"
+
+      # pubspec.yaml promises `sdk: >=3.0.0`, and nothing verified it. The
+      # suite itself cannot run here — `lints ^6.0.0` needs Dart 3.8 — but a
+      # dev dependency is not something users install. So the floor is checked
+      # the way they actually meet it: a package that depends on this one,
+      # resolved and run on the oldest SDK the pubspec claims to support.
+      - name: Resolve and run as a consumer would
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          cat > pubspec.yaml <<YAML
+          name: consumer
+          environment:
+            sdk: ">=3.0.0 <4.0.0"
+          dev_dependencies:
+            tidy_imports:
+              path: $GITHUB_WORKSPACE
+          YAML
+          dart pub get
+          dart run tidy_imports --version
