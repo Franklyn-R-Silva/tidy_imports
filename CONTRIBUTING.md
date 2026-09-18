@@ -89,13 +89,17 @@ git tag v1.5.1
 git push origin main v1.5.1
 ```
 
-5. The tag starts `.github/workflows/publish.yml`, which publishes to pub.dev
-   over OIDC. That needs automated publishing switched on for the package —
-   see the comment at the top of that workflow. Until it is, publish with:
+5. Publish to pub.dev, from a clean checkout of the tag:
 
 ```sh
 dart pub publish
 ```
+
+   This step is deliberately manual. Publishing from GitHub Actions needs
+   automated publishing enabled on the package's pub.dev admin page; without
+   it the workflow fails at the upload with `publishing from github is not
+   enabled`, which is a broken release pipeline pretending to be a working
+   one. A person running one command is clearer.
 
 ## Generating Build Metadata
 

@@ -1,7 +1,7 @@
 version: 2
 
 updates:
-  # The two pinned actions in test.yml and publish.yml age silently otherwise;
+  # The actions pinned in test.yml age silently otherwise;
   # nothing in a green build tells you checkout@v4 has been superseded.
   - package-ecosystem: github-actions
     directory: /
