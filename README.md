@@ -82,14 +82,14 @@ tidy_imports
 ## Usage
 
 ```sh
-# Sort all dart files in the project
+# Sort every dart file in the project
 dart run tidy_imports
 
 # Sort specific files
 dart run tidy_imports lib/main.dart lib/app.dart
 
-# Sort files matching a glob pattern
-dart run tidy_imports "lib/src/*"
+# Sort one folder
+dart run tidy_imports "lib/features/"
 
 # Preview changes without writing (dry run)
 dart run tidy_imports --dry-run
@@ -97,6 +97,21 @@ dart run tidy_imports --dry-run
 # CI: fail if any file is unsorted
 dart run tidy_imports --exit-if-changed
 ```
+
+### Choosing which files to sort
+
+A positional argument is a **regular expression**, matched against each file's
+path — not a shell glob. Two things follow from that:
+
+```sh
+dart run tidy_imports "lib/features/"     # every file under lib/features
+dart run tidy_imports "_test\.dart$"      # only test files
+dart run tidy_imports "lib/a/" "lib/b/"   # several patterns: any match wins
+```
+
+Write patterns with **forward slashes on every platform**, Windows included —
+paths are normalised before matching. With no pattern, the whole project is
+sorted.
 
 ## Options
 
@@ -116,6 +131,27 @@ dart run tidy_imports --exit-if-changed
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
 | `--version` | `-v` | Print version and exit |
 | `--help` | `-h` | Show help |
+
+### Turning an option off
+
+Everything in the first group above is negatable, so a flag can override your
+config file for a single run — not only switch something on. A flag you type
+always wins:
+
+```sh
+# pubspec.yaml says `emojis: true`, but not for this run
+dart run tidy_imports --no-emojis
+
+# pubspec.yaml says `comments: false`, but put them back this once
+dart run tidy_imports --comments
+```
+
+`--no-comments` and `--no-blank-lines` are simply the "off" side of the
+`comments` and `blank-lines` options, and mean what they always meant.
+
+`--dry-run`, `--exit-if-changed`, `--ignore-config`, `--version` and `--help`
+describe a single invocation rather than a preference, so there is nothing to
+negate.
 
 ## Configuration
 
@@ -416,6 +452,25 @@ Classification also reads the **import URI**, not the raw text of the line. A
 line such as `import 'package:http/http.dart'; // uses dart:io underneath` used
 to be filed under **Dart imports** because of the word in the comment; it now
 goes to **Package imports**, where it belongs.
+
+### What is left alone
+
+The other half of the promise: text that only *looks* like a directive is never
+moved. A commented-out import stays commented out, and an import inside a string
+stays inside the string.
+
+```dart
+/*
+import 'package:app/disabled.dart';    // stays disabled
+*/
+
+const template = '''
+import 'package:app/generated.dart';   // stays in the template
+''';
+```
+
+The sorter tracks quotes and `/* */` blocks — which nest in Dart — line by line,
+so only a line that *begins* in executable code can be a directive at all.
 
 ## CI Integration
 
