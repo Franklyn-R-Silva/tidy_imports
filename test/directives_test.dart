@@ -874,6 +874,197 @@ export 'a.dart';
     });
   });
 
+  group('remove duplicates (--remove-duplicates)', () {
+    test('is off by default', () {
+      final lines = [
+        "import 'dart:math';",
+        "import 'dart:math';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(result.duplicatesRemoved, 0);
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:math';
+import 'dart:math';
+
+void main() {}
+''',
+      );
+    });
+
+    test('folds an identical directive into the first one', () {
+      final lines = [
+        "import 'package:demo/z.dart';",
+        "import 'dart:math';",
+        "import 'package:demo/z.dart';",
+        "import 'dart:math';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 2);
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:math';
+
+// Project imports:
+import 'package:demo/z.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('matches a wrapped directive against its one-line twin', () {
+      final lines = [
+        "import 'package:collection/collection.dart' show IterableExtension;",
+        "import 'package:collection/collection.dart'",
+        '    show IterableExtension;',
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 1);
+    });
+
+    test('keeps imports that differ by prefix', () {
+      final lines = [
+        "import 'package:demo/z.dart' as a;",
+        "import 'package:demo/z.dart' as b;",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 0);
+      expect(result.sortedFile, contains("as a;"));
+      expect(result.sortedFile, contains("as b;"));
+    });
+
+    test('keeps imports that differ by show clause', () {
+      final lines = [
+        "import 'package:demo/z.dart' show Foo;",
+        "import 'package:demo/z.dart' show Bar;",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 0);
+    });
+
+    test('keeps a duplicate whose trailing comment differs', () {
+      final lines = [
+        "import 'dart:math'; // for max",
+        "import 'dart:math';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(
+        result.duplicatesRemoved,
+        0,
+        reason: 'dropping one would drop what its comment says',
+      );
+    });
+
+    test('an import inside a block comment is not a duplicate of a real one',
+        () {
+      final lines = [
+        "import 'dart:math';",
+        '',
+        '/*',
+        "import 'dart:math';",
+        '*/',
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        false,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 0);
+      expect(result.sortedFile, contains("/*\nimport 'dart:math';\n*/"));
+    });
+
+    test('deduplicates exports too', () {
+      final lines = [
+        "export 'package:demo/a.dart';",
+        "export 'package:demo/a.dart';",
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        sortExports: true,
+        removeDuplicates: true,
+      );
+
+      expect(result.duplicatesRemoved, 1);
+      expect(result.sortedFile, "export 'package:demo/a.dart';\n");
+    });
+  });
+
   group('group_project_by_folder_depth', () {
     test('depth 0 keeps one group per full folder path', () {
       final lines = [

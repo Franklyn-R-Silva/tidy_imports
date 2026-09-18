@@ -51,6 +51,8 @@ The CLI always resolves its target from `Directory.current`, so running it from 
 
 **The body below the block is re-emitted, never copied through.** After the last group, `sortImports` strips the blank lines that separated the directives from the rest of the file and re-adds exactly one — and *none* when nothing follows, so a barrel file ends on its last directive instead of a stray blank line `dart format` would strip right back out, leaving the two tools undoing each other (issue #6). Blank lines *after* the first line of code are the author's and are kept.
 
+**Deletion is opt-in, and split by what it takes to decide.** `removeDuplicates` lives in `lib/sort.dart` and folds a directive whose `signature` — leading `// ignore:` lines plus its own, whitespace collapsed, trailing comments *kept* — repeats one already classified. That is a text question, so it stays on the pure side. Whether an import is *unused* is not: it needs a resolved element model, so `--remove-unused` shells out from `bin/` to `dart fix --apply --code=unused_import` before the sort loop, and honours `readOnly` by passing `--dry-run` instead. Don't reimplement that in `lib/` — approximating it on text removes imports that are in use.
+
 **`pubspec.lock` is optional.** It is absent in pub workspaces/monorepos; the tool falls back to an empty dependency list and only loses Flutter plugin-registrant skipping. Don't reintroduce a hard read.
 
 **Public API surface.** `lib/tidy_imports.dart` is an export barrel required by pub.dev; new public symbols need an entry there.
