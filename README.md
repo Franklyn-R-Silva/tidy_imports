@@ -185,9 +185,9 @@ prefer the tighter output, `--no-separate-relative-imports` or
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
-| `--report` | | Read the import graph: cycles and unreferenced files. Writes nothing |
+| `--report` | | Read the import graph: cycles, and files no entry point reaches. Writes nothing |
 | `--dry-run` | | Preview changes without writing files |
-| `--exit-if-changed` | | Exit with code 1 if any file would change |
+| `--exit-if-changed` | | Exit with code 1 if any file would change — or, with `--report`, on any finding |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
 | `--version` | `-v` | Print version and exit |
 | `--help` | `-h` | Show help |
@@ -232,6 +232,7 @@ tidy_imports:
   relative_imports: false   # Default: false — rewrite own-package imports as relative
   remove_duplicates: false  # Default: false — drop an import written identically twice
   remove_unused: false      # Default: false — run dart fix --code=unused_import first
+  report_roots: []          # Default: [] — extra entry points for --report, as regexes
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
     - fake_
     - mock_
@@ -364,25 +365,67 @@ dart run tidy_imports --report
 
 ```
 ┏━━ Reading the import graph of 9 files
-┃  ✖ 1 import cycle:
+┃  ✖ 1 group of files that import each other:
 ┃     lib/core/api.dart → lib/core/db.dart → lib/features/home.dart → lib/core/api.dart
-┃  ! 2 files nothing refers to:
+┃  ! 2 files no entry point reaches:
 ┃     lib/core/legacy_cart.dart
 ┃     lib/core/old_checkout.dart
+┃     (build_runner, reflection and dynamic loading are invisible here — read before deleting)
 ┗━━ • 3 findings
 ```
 
-**Import cycles.** Dart allows them, so nothing in the toolchain points them
-out — but two files in a cycle cannot be read, tested or moved apart
-independently. The report names the whole loop, not just one edge of it.
+**Files that import each other.** Dart allows import cycles, so nothing in
+the toolchain points them out — but two files in a cycle cannot be read,
+tested or moved apart independently. Each group is drawn as a walk along
+imports that really exist; when the group is larger than the shortest loop
+through it, the rest is counted (`+2 more in this group`).
 
-**Files nothing refers to.** Different from an unused *import*: this is a whole
-file that no `import`, `export` or `part` in the project mentions. In a
-long-lived app there are usually more than you expect.
+**Files no entry point reaches.** Different from an unused *import*: a whole
+file that no entry point can get to through any chain of `import`, `export` or
+`part`. That sees through a dead barrel to the files it exports, and through a
+pair of dead files that only import each other. In a long-lived app there are
+usually more than you expect.
 
-`part` directives count as references, so a generated `.g.dart` is never
-reported. `lib/main.dart` and `lib/<your_package>.dart` are entry points and
-are never reported either, nor is anything outside `lib/`.
+### What counts as an entry point
+
+Anything you can run or publish, so it is unreferenced by definition:
+
+- `lib/main.dart`, and every `lib/main_*.dart` flavour
+- any file under `lib/` that declares a top-level `main()`
+- every file outside `lib/` — tests, `bin/`, `tool/`, `example/`, `web/`
+- for a **library** — no `publish_to: none`, no `lib/main.dart` — every file
+  outside `lib/src/`, since pub convention makes that the public surface your
+  consumers import
+- `lib/<your_package>.dart`, the Flutter plugin registrant, and whatever you
+  list under `report_roots`:
+
+```yaml
+tidy_imports:
+  report_roots:
+    - /lib/app/bootstrap\.dart   # regex on the project-relative path
+```
+
+A generated `.g.dart` is reached through the `part` directive of the file it
+belongs to, so it is only ever listed alongside a dead owner.
+
+### Narrowing the report
+
+A positional pattern or an `ignored_files` entry narrows what is **printed**,
+never what is **read**. The graph is always built from the whole project, so a
+file kept alive only by something you filtered out is still alive:
+
+```sh
+dart run tidy_imports --report "lib/features/"   # findings in lib/features only
+```
+
+That is also how a cycle inside generated code gets out of the way without
+losing its edges — `flutter gen-l10n` output is the stock example:
+
+```yaml
+tidy_imports:
+  ignored_files:
+    - /lib/l10n/
+```
 
 ### In CI
 
@@ -390,14 +433,16 @@ are never reported either, nor is anything outside `lib/`.
 dart run tidy_imports --report --exit-if-changed
 ```
 
-Exits 1 on any finding, so a cycle introduced by a pull request fails the build
-instead of settling in.
+Exits 1 on any finding, with a line on stderr saying so, so a cycle introduced
+by a pull request fails the build instead of settling in. A run that finds no
+Dart files at all also exits 1 here: a gate that inspected nothing must not
+pass.
 
 ### What it cannot see
 
 The graph is built from directives, nothing else. Code reached by
 `build_runner`, reflection, or a path assembled at runtime is invisible to it,
-so an "unreferenced" file is a question to answer, not an instruction to follow.
+so an "unreachable" file is a question to answer, not an instruction to follow.
 Read before deleting.
 
 ## Matching Dart's own lints

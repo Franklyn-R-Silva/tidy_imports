@@ -1,3 +1,84 @@
+## 2.2.0 (2026-09-18)
+
+A review of `--report` — five reviewers, one lens each, then three adversarial
+verifiers per finding — confirmed twenty things wrong with the first version.
+Four of them made the report lie in ordinary Flutter projects; this release
+fixes all twenty.
+
+**The graph is built from the whole project now.** It used to be built from
+the sorter's file set, after positional patterns and `ignored_files` had
+trimmed it — so a filtered-out file contributed no edges, and everything it
+imported looked dead. Ignore `\.config\.dart$` and every service the
+injectable output was the only importer of was reported; run
+`--report "lib/features/"` and a cycle crossing that boundary vanished. Patterns
+and `ignored_files` now narrow what is *printed*, never what is *read*. That is
+also how a cycle inside generated code — `flutter gen-l10n` output is the stock
+example — gets out of the way without losing its edges. Importers under
+`example/`, `tool/`, `web/` and `benchmark/` are read too; they were never
+scanned, so a `lib/` file used only from there was reported.
+
+**Entry points are recognised, not hard-coded.** Only `lib/main.dart` and
+`lib/<package>.dart` counted, so every Flutter flavour main, every `lib/` script
+with a `main()`, and every public library of a pub package (`package:foo/
+testing.dart` — imported by consumers, never by the package itself) was a
+permanent finding, and `--report --exit-if-changed` could never pass. Roots now
+include `lib/main_*.dart`, any `lib/` file declaring a top-level `main()`
+(comments and strings excluded), the plugin registrant, a `report_roots` list
+in the config, and — for a library, meaning no `publish_to: none` and no
+`lib/main.dart` — every file outside `lib/src/`.
+
+**Cycle arrows follow real edges.** A group was sorted alphabetically and
+joined with `→`, which claimed imports no file declares: for `a → c → b → a`
+the report printed `a → b → c → a`, and a developer following it to cut the
+right import opened the wrong file. Each group is now drawn as a shortest
+closed walk along edges that exist, with the rest of the group counted.
+
+**Dead files are the unreachable ones.** In-degree zero was one layer deep: a
+dead barrel hid everything it exported, and a pair of dead files importing each
+other was reported as a cycle, which reads as "alive". The report now walks
+from every entry point and names what is never reached — the barrel *and* its
+exports, both halves of the pair.
+
+**Every target of a directive is an edge.** Only the first quoted URI of the
+first line counted, so a conditional import's `if (dart.library.io) 'io.dart'`
+targets — the standard shape for platform code — had nothing pointing at them.
+So did a URI written on the line after `import`, and the second of two
+directives on one line. A directive spread over more than 24 lines by the tall
+formatter was dropped entirely; the bound is 512 now, and a scan that runs into
+the next directive gives up instead of swallowing it.
+
+**Smaller, all real.** Monorepo sub-packages under `packages/` resolve their
+own `package:` URIs, so their cycles and dead files are visible. The Flutter
+registrant is matched on a normalised path — the old check never matched on
+Windows, and the file was sorted and reported there. A file that is not valid
+UTF-8 is decoded leniently instead of crashing the report; one that cannot be
+read at all is an error line and exit 1, never a silently missing node. A run
+that finds no Dart files says so, and fails under `--exit-if-changed`. Failing
+under `--exit-if-changed` writes a line to stderr saying why. Tarjan no longer
+re-sorts a node's children on every visit, and a hand-built graph with a
+target that is not a node no longer throws.
+
+### Fixes
+
+* `--report`: graph built from every scanned file; patterns and `ignored_files`
+  narrow the output only
+* `--report`: flavour mains, `main()` declarers, library public files, the
+  registrant and `report_roots` are entry points
+* `--report`: cycle walks follow edges that exist
+* `--report`: dead files are those no entry point reaches
+* `directiveUris`: every URI of a directive, URIs on the next line, two
+  directives on one line, directives longer than 24 lines
+* `--report`: sub-packages, the registrant on Windows, invalid UTF-8,
+  unreadable files, empty projects, a stderr line on failure
+* sorter: an unreadable file is an error line and exit 1, not a stack trace
+
+### Features
+
+* `report_roots:` config key — extra entry points as regexes
+* `ImportGraph.cycleWalk`, `ImportGraph.unreachable`, `ImportGraph.libraryRoot`
+  and `packages`; `declaresMain` in `lib/sort.dart`
+* CI runs the suite on Windows as well
+
 ## 2.1.0 (2026-09-18)
 
 `tidy_imports` has always parsed every directive in the project on every run,
@@ -11,6 +92,7 @@ then thrown the result away. Those directives are a dependency graph, and
 ┃  ! 2 files nothing refers to:
 ┃     lib/core/legacy_cart.dart
 ┃     lib/core/old_checkout.dart
+┃     (build_runner, reflection and dynamic loading are invisible here — read before deleting)
 ┗━━ • 3 findings
 ```
 
@@ -34,8 +116,8 @@ question to answer, not an instruction to follow.
 
 ### Features
 
-* `--report` — import cycles and unreferenced files, from the scan that was
-  already happening
+* `--report` — import cycles and unreferenced files, from the same directive
+  scanner the sorter uses
 * `ImportGraph` and `resolveUri` in `lib/graph.dart`, and `directiveUris` in
   `lib/sort.dart`, are public: the graph is usable without the CLI
 

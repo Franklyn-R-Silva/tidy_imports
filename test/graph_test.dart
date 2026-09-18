@@ -49,6 +49,151 @@ void main() {
     });
   });
 
+  group('resolveUri edge cases', () {
+    String? r(String uri, {String from = 'lib/a.dart'}) =>
+        resolveUri(uri, from: from, packageName: 'app');
+
+    test('a leading slash is not a project file', () {
+      expect(r('/lib/b.dart'), isNull);
+    });
+
+    test('dot and empty segments are ignored in both forms', () {
+      expect(r('./b.dart'), 'lib/b.dart');
+      expect(r('x//b.dart'), 'lib/x/b.dart');
+      expect(r('package:app/./b.dart'), 'lib/b.dart');
+    });
+
+    test('a package whose name merely starts the same is not ours', () {
+      expect(r('package:app_core/b.dart'), isNull);
+    });
+
+    test('climbing exactly to the root is nothing', () {
+      expect(r('..', from: 'lib/a.dart'), isNull);
+    });
+
+    test('a package uri walks .. the same way a relative one does', () {
+      expect(r('package:app/../x.dart'), 'x.dart');
+    });
+
+    test('resolves a sub-package through its directory', () {
+      expect(
+        resolveUri('package:core/b.dart',
+            from: 'lib/a.dart',
+            packageName: 'app',
+            packages: {'packages/core': 'core'}),
+        'packages/core/lib/b.dart',
+      );
+    });
+  });
+
+  group('cycleWalk', () {
+    test('follows edges that exist', () {
+      final graph = ImportGraph.build({
+        'lib/a.dart': ['c.dart'],
+        'lib/b.dart': ['a.dart'],
+        'lib/c.dart': ['b.dart'],
+      }, 'app');
+
+      final walk = graph.cycleWalk(graph.cycles().single);
+
+      expect(walk, ['lib/a.dart', 'lib/c.dart', 'lib/b.dart']);
+      for (var i = 0; i < walk.length; i++) {
+        final next = walk[(i + 1) % walk.length];
+        expect(graph.edges[walk[i]], contains(next),
+            reason: '${walk[i]} must really import $next');
+      }
+    });
+
+    test('takes the shortest way round a bigger group', () {
+      final graph = ImportGraph.build({
+        'lib/x.dart': ['y.dart', 'z.dart'],
+        'lib/y.dart': ['x.dart'],
+        'lib/z.dart': ['x.dart'],
+      }, 'app');
+
+      expect(
+          graph.cycleWalk(graph.cycles().single), ['lib/x.dart', 'lib/y.dart']);
+    });
+  });
+
+  group('unreachable', () {
+    test('sees through a dead barrel', () {
+      final graph = ImportGraph.build({
+        'lib/main.dart': [],
+        'lib/barrel.dart': ['inner.dart'],
+        'lib/inner.dart': [],
+      }, 'app');
+
+      expect(graph.unreachable(roots: {'lib/main.dart'}),
+          ['lib/barrel.dart', 'lib/inner.dart']);
+    });
+
+    test('reports a dead pair that only imports itself', () {
+      final graph = ImportGraph.build({
+        'lib/main.dart': [],
+        'lib/p.dart': ['q.dart'],
+        'lib/q.dart': ['p.dart'],
+      }, 'app');
+
+      expect(graph.unreachable(roots: {'lib/main.dart'}),
+          ['lib/p.dart', 'lib/q.dart']);
+    });
+
+    test('a file outside lib/ is an entry point by nature', () {
+      final graph = ImportGraph.build({
+        'test/a_test.dart': ['package:app/only_tested.dart'],
+        'lib/only_tested.dart': [],
+      }, 'app');
+
+      expect(graph.unreachable(roots: const {}), isEmpty);
+    });
+
+    test('knows the lib/ of a sub-package', () {
+      final graph = ImportGraph.build(
+          {
+            'lib/main.dart': [],
+            'packages/core/lib/core.dart': [],
+            'packages/core/lib/src/dead.dart': [],
+          },
+          'app',
+          packages: {'packages/core': 'core'});
+
+      expect(graph.libraryRoot('packages/core/lib/src/dead.dart'),
+          'packages/core/lib/');
+      expect(
+        graph.unreachable(
+            roots: {'lib/main.dart', 'packages/core/lib/core.dart'}),
+        ['packages/core/lib/src/dead.dart'],
+      );
+    });
+  });
+
+  group('a graph built by hand', () {
+    test('treats a target that is not a node as a leaf', () {
+      const graph = ImportGraph({
+        'lib/a.dart': {'lib/missing.dart'},
+      });
+
+      expect(graph.cycles(), isEmpty);
+    });
+  });
+
+  group('declaresMain', () {
+    test('recognises the usual shapes', () {
+      expect(declaresMain(['void main() {}']), isTrue);
+      expect(declaresMain(['Future<void> main() async {}']), isTrue);
+      expect(declaresMain(['main(List<String> args) {}']), isTrue);
+      expect(declaresMain(['dynamic main() {}']), isTrue);
+    });
+
+    test('ignores a main in a comment, a string, or a class', () {
+      expect(declaresMain(['// void main() {}']), isFalse);
+      expect(declaresMain(['/*', 'void main() {}', '*/']), isFalse);
+      expect(declaresMain(['class A {', '  void main() {}', '}']), isFalse);
+      expect(declaresMain(['void mainly() {}']), isFalse);
+    });
+  });
+
   group('cycles', () {
     test('finds a two-file cycle', () {
       final graph = ImportGraph.build({
@@ -184,6 +329,54 @@ void main() {
       ]);
 
       expect(uris, ['real.dart']);
+    });
+
+    test('reads every target of a conditional directive', () {
+      final uris = directiveUris([
+        "import 'stub.dart'",
+        "    if (dart.library.io) 'io.dart'",
+        "    if (dart.library.html) 'web.dart';",
+      ]);
+
+      expect(uris, ['stub.dart', 'io.dart', 'web.dart']);
+    });
+
+    test('reads a uri on the line after the keyword', () {
+      expect(directiveUris(['import', "    'src/a.dart';"]), ['src/a.dart']);
+    });
+
+    test('reads two directives on one line', () {
+      expect(
+        directiveUris(["import 'a.dart'; import 'b.dart';"]),
+        ['a.dart', 'b.dart'],
+      );
+    });
+
+    test('does not read a quoted path out of a trailing comment', () {
+      expect(
+        directiveUris(["import 'a.dart'; // see 'b.dart'"]),
+        ['a.dart'],
+      );
+    });
+
+    test('survives a show clause longer than the old 24-line bound', () {
+      final uris = directiveUris([
+        "export 'src/big.dart'",
+        '    show',
+        for (var i = 1; i <= 30; i++) '        A$i,',
+        '        Z;',
+      ]);
+
+      expect(uris, ['src/big.dart']);
+    });
+
+    test('gives up on a directive that runs into the next one', () {
+      final uris = directiveUris([
+        "import 'broken.dart'",
+        "import 'fine.dart';",
+      ]);
+
+      expect(uris, ['fine.dart']);
     });
 
     test('does not read a directive out of a string', () {

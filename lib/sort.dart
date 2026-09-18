@@ -11,9 +11,13 @@ const _groupLabels = <List<String>>[
 ];
 
 /// How many lines a single directive may span before the scanner gives up and
-/// treats the opening line as ordinary source. A directive that never closes
-/// means malformed input; without a bound the scanner would swallow the file.
-const _maxDirectiveLines = 24;
+/// treats the opening line as ordinary source.
+///
+/// The bound exists only so malformed input cannot swallow a file. It has to
+/// sit far above anything `dart format` writes: since Dart 3.7 the tall style
+/// puts every `show`/`hide` name on its own line, so a barrel re-exporting 23
+/// symbols is already 25 lines — the old bound of 24 silently dropped it.
+const _maxDirectiveLines = 512;
 
 /// Sort the imports of a dart file.
 ///
@@ -216,7 +220,9 @@ ImportSortData sortImports(
         final span = _scanDirective(lines, start);
         if (span > 0) {
           final body = lines.sublist(start, start + span);
-          final uri = _directiveUri(body.first);
+          // The first URI anywhere in the body, not on the first line only:
+          // `import` followed by the URI on the next line is legal Dart.
+          final uri = _directiveTargets(body).firstOrNull;
           if (uri != null) {
             // Rewrite first: a `package:` URI and its relative form are the
             // same import, and only look like duplicates once both are
@@ -417,7 +423,6 @@ ImportSortData sortImports(
 /// `part` counts: a part file is never imported, only parted, and leaving the
 /// directive out would make every generated `.g.dart` look unreferenced.
 List<String> directiveUris(List<String> lines) {
-  const keywords = ['import ', 'export ', 'part '];
   final uris = <String>[];
   final scanner = _SourceScanner();
 
@@ -429,14 +434,12 @@ List<String> directiveUris(List<String> lines) {
       while (start < lines.length && _isIgnorePragma(lines[start])) {
         start++;
       }
-      if (start < lines.length &&
-          keywords.any(lines[start].startsWith) &&
-          !lines[start].startsWith('part of')) {
+      if (start < lines.length && _opensDirective(lines[start])) {
         final span = _scanDirective(lines, start);
         if (span > 0) {
-          final uri = _directiveUri(lines[start]);
-          if (uri != null) {
-            uris.add(uri);
+          final targets = _directiveTargets(lines.sublist(start, start + span));
+          if (targets.isNotEmpty) {
+            uris.addAll(targets);
             for (var i = index; i < start + span; i++) {
               scanner.consume(lines[i]);
             }
@@ -452,13 +455,27 @@ List<String> directiveUris(List<String> lines) {
   return uris;
 }
 
+/// Whether [lines] declare a top-level `main` — the mark of an entry point.
+///
+/// Matched at column 0 on lines that begin in executable code, so a `main(`
+/// inside a comment, a string, or a class body does not count. `void main()`,
+/// `Future<void> main() async`, `dynamic main(List<String> args)` and a bare
+/// `main()` all do.
+bool declaresMain(List<String> lines) {
+  final scanner = _SourceScanner();
+  for (final line in lines) {
+    if (scanner.startsInCode && _mainDeclaration.hasMatch(line)) return true;
+    scanner.consume(line);
+  }
+  return false;
+}
+
+final _mainDeclaration = RegExp(
+  r'^(?:(?:Future<[^>]*>|FutureOr<[^>]*>|void|dynamic)\s+)?main\s*\(',
+);
+
 /// Matches the quoted URI of a directive.
 final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
-
-/// The URI of the directive opening on [firstLine], or null when the line
-/// carries no quoted string — in which case it is not a directive after all.
-String? _directiveUri(String firstLine) =>
-    _uriPattern.firstMatch(firstLine)?.group(1);
 
 /// Whether [line] is an `// ignore:` pragma, which suppresses a lint on the
 /// line below it and therefore belongs to the directive that follows.
@@ -477,12 +494,44 @@ bool _isIgnorePragma(String line) {
 int _scanDirective(List<String> lines, int start) {
   final limit = start + _maxDirectiveLines;
   for (var i = start; i < lines.length && i < limit; i++) {
+    // A directive never contains the start of another one. Meeting one means
+    // the first never terminated, and it is better to give that one up than
+    // to swallow the second into it.
+    if (i > start && _startsDirectiveKeyword(lines[i])) return 0;
     if (_stripTrailingComment(lines[i]).endsWith(';')) {
       return i - start + 1;
     }
   }
   return 0;
 }
+
+/// Whether [line] opens any directive kind, `part of` and `library` included.
+///
+/// The keyword may end the line — `import` with its URI on the next line is
+/// legal Dart — so it is matched up to whitespace or end of line, not up to a
+/// trailing space.
+bool _startsDirectiveKeyword(String line) => _anyDirective.hasMatch(line);
+
+final _anyDirective = RegExp(r'^(?:import|export|part|library)(?:\s|$)');
+
+/// Whether [line] opens an `import`, `export` or `part` directive — the kinds
+/// that name another file. `part of` points the other way and is excluded.
+bool _opensDirective(String line) =>
+    _fileDirective.hasMatch(line) && !line.startsWith('part of');
+
+final _fileDirective = RegExp(r'^(?:import|export|part)(?:\s|$)');
+
+/// Every URI a directive [body] names, in source order.
+///
+/// That is the default one plus each `if (dart.library.x) 'uri'` target of a
+/// conditional import or export. `show`, `hide`, `as` and `deferred` take bare
+/// identifiers, so every quoted string in a directive is a URI — once trailing
+/// comments are stripped, so a `// see 'other.dart'` is not read as one.
+List<String> _directiveTargets(List<String> body) => [
+      for (final line in body)
+        for (final match in _uriPattern.allMatches(_stripTrailingComment(line)))
+          match.group(1)!,
+    ];
 
 /// [line] without its trailing `//` comment.
 ///
