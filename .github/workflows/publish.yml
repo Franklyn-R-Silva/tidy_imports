@@ -1,19 +1,27 @@
 name: publish
 
-# Publishes to pub.dev when Release Please pushes a vX.Y.Z tag, using OIDC —
-# no long-lived token lives in this repository.
+# Publishes to pub.dev over OIDC — no long-lived pub.dev token lives here.
 #
-# ONE-TIME SETUP, on the package's Admin tab at pub.dev:
-#   Automated publishing -> Enable publishing from GitHub Actions
-#     Repository:   Franklyn-R-Silva/tidy_imports
-#     Tag pattern:  v{{version}}
+# TWO one-time preconditions, and the release is manual until both are met:
 #
-# Until that is switched on, this job fails with a permission error and
-# nothing is published; `dart pub publish` by hand still works.
+# 1. pub.dev -> tidy_imports -> Admin -> Automated publishing:
+#      Repository:  Franklyn-R-Silva/tidy_imports
+#      Tag pattern: v{{version}}
+#    Without it this job fails with a permission error.
+#
+# 2. A RELEASE_PLEASE_TOKEN secret — a PAT with `repo` scope — so that
+#    release-please.yml pushes the tag as a user rather than as the default
+#    GITHUB_TOKEN. GitHub deliberately does not trigger workflows from pushes
+#    made with GITHUB_TOKEN, so a tag created with it reaches this file and
+#    does nothing at all. That is why v1.5.0 went out by hand.
+#
+# Until then: run this workflow from the Actions tab, picking the tag in the
+# "Use workflow from" dropdown, or publish with `dart pub publish`.
 
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
 
 jobs:
   publish:

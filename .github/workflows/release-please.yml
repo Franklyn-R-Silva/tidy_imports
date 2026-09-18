@@ -17,6 +17,10 @@ name: Release Please
 #   (b) a Personal Access Token stored as the RELEASE_PLEASE_TOKEN secret
 #       (repo scope) — used automatically below when present.
 # The default GITHUB_TOKEN alone cannot open PRs while (a) is disabled.
+#
+# The PAT matters for a second reason: GitHub does not trigger workflows from
+# pushes made with GITHUB_TOKEN, so a release tag created with it never starts
+# publish.yml and the release has to be published by hand.
 on:
   push:
     branches: [main]
