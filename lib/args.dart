@@ -44,6 +44,14 @@ Options
                                  project imports, matching dart format 3.13+.
       --test-imports             Give project files named fake_* / mock_* their
                                  own "Test imports:" group, written last.
+      --flat                     Drop the groups: one alphabetical run per
+                                 section (dart:, package:, relative), which is
+                                 the order the `directives_ordering` lint
+                                 expects. Off by default.
+      --relative-imports         Rewrite package:<your_package>/… imports as
+                                 relative paths, matching the
+                                 `prefer_relative_imports` lint. Only inside
+                                 lib/. Off by default.
       --remove-duplicates        Drop an import written identically twice,
                                  keeping the first. Off by default.
       --remove-unused            Run `dart fix --code=unused_import` first, so
@@ -73,6 +81,7 @@ Examples
   dart run tidy_imports lib/main.dart
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
+  dart run tidy_imports --flat            # satisfy directives_ordering
   dart run tidy_imports --remove-unused --remove-duplicates
   dart run tidy_imports --no-emojis
 ''';

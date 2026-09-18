@@ -29,6 +29,8 @@ void main(List<String> args) {
     ..addFlag('sort-pubspec')
     ..addFlag('sort-exports')
     ..addFlag('remove-duplicates')
+    ..addFlag('flat')
+    ..addFlag('relative-imports')
     ..addFlag('remove-unused')
     ..addFlag('group-by-folder')
     ..addOption('group-by-folder-depth', valueHelp: 'n')
@@ -92,6 +94,8 @@ void main(List<String> args) {
   final removeDuplicates =
       resolve('remove-duplicates', config.removeDuplicates);
   final removeUnused = resolve('remove-unused', config.removeUnused);
+  final flat = resolve('flat', config.flat);
+  final relativeImports = resolve('relative-imports', config.relativeImports);
   final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
   // A depth is a count of folder segments, so anything but a non-negative
@@ -209,6 +213,9 @@ void main(List<String> args) {
       sortExports: sortExports,
       groupProjectByFolderDepth: groupByFolderDepth,
       removeDuplicates: removeDuplicates,
+      flat: flat,
+      relativeImports: relativeImports,
+      libRelativePath: _libRelativePath(currentPath, filePath),
     );
     duplicatesRemoved += result.duplicatesRemoved;
     if (!result.updated) continue;
@@ -327,4 +334,17 @@ String _dartExecutable() {
   final resolved = Platform.resolvedExecutable;
   final name = resolved.split(Platform.pathSeparator).last.toLowerCase();
   return (name == 'dart' || name == 'dart.exe') ? resolved : 'dart';
+}
+
+/// [filePath] written relative to `lib/`, with `/` separators — or null when
+/// the file does not live under `lib/`.
+///
+/// Only a file inside `lib/` can be reached from another one by a relative
+/// URI. A test or a script importing the package has to say `package:`, so
+/// there is no relative form to rewrite to and the option simply does nothing
+/// there.
+String? _libRelativePath(String projectPath, String filePath) {
+  const lib = '/lib/';
+  final relative = files.toPosix(filePath.replaceFirst(projectPath, ''));
+  return relative.startsWith(lib) ? relative.substring(lib.length) : null;
 }

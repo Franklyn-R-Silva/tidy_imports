@@ -148,6 +148,8 @@ sorted.
 | `--group-by-folder` | | Separate project imports by subfolder |
 | `--group-by-folder-depth=<n>` | | Folder segments to group project imports by (`0` = whole path; above `0` implies `--group-by-folder`) |
 | `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
+| `--flat` | | One alphabetical run per section, no groups — what `directives_ordering` expects (**off by default**) |
+| `--relative-imports` | | Rewrite own-package imports as relative paths (**off by default**) |
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) |
@@ -193,6 +195,8 @@ tidy_imports:
   group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
   separate_relative_imports: false  # Default: false — blank line before relative imports
   test_imports: false    # Default: false — split fake_/mock_ files into their own group
+  flat: false            # Default: false — no groups, one alphabetical run per section
+  relative_imports: false   # Default: false — rewrite own-package imports as relative
   remove_duplicates: false  # Default: false — drop an import written identically twice
   remove_unused: false      # Default: false — run dart fix --code=unused_import first
   test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
@@ -314,6 +318,62 @@ export 'package:acme_shared/utils.dart';
 export 'src/models/user.dart';
 export 'src/widgets/button.dart';
 ```
+
+## Matching Dart's own lints
+
+Two lints in the Dart ecosystem disagree with how `tidy_imports` sorts by
+default. Both are off unless you ask, because the default output — grouped,
+labelled — is the whole point of the tool for most people.
+
+### `--flat` — for `directives_ordering`
+
+The `directives_ordering` lint wants one alphabetical run per section: `dart:`,
+then `package:`, then relative. The default grouping breaks it, because
+`package:flutter/…` is lifted above the other packages:
+
+```dart
+// default                                    // --flat
+// Dart imports:                              import 'dart:io';
+import 'dart:io';                             import 'package:args/args.dart';
+                                              import 'package:flutter/material.dart';
+// Flutter imports:                           import 'helper.dart';
+import 'package:flutter/material.dart';
+                                              // no lint warning
+// Package imports:
+import 'package:args/args.dart';
+
+//  ← Sort directive sections alphabetically
+```
+
+With `--flat` the Flutter group stops being special, the headers go away — a
+comment between two runs the lint reads as one section would be a lie about the
+structure — and `export` directives get their own block below the imports,
+which is also what the lint asks for.
+
+Grouping options (`--group-by-folder`, `--test-imports`, custom tiers) are
+ignored under `--flat`: there are no groups left for them to shape.
+
+### `--relative-imports` — for `prefer_relative_imports`
+
+Rewrites imports of your own package as paths relative to the importing file:
+
+```dart
+// in lib/src/p2/bar.dart
+import 'package:my_app/src/foo.dart';      →  import '../foo.dart';
+import 'package:my_app/src/p2/foo.dart';   →  import 'foo.dart';
+```
+
+Only files under `lib/` are touched. A file in `test/` or `bin/` cannot reach
+`lib/` with a relative URI at all, so its `package:` imports are left exactly as
+they are.
+
+Another package's imports are never rewritten, and the prefix, `show`/`hide`
+clause and trailing comment all survive the rewrite. If a rewrite happens to
+produce an import you already had, `--remove-duplicates` will fold the two.
+
+Note that `prefer_relative_imports` and `always_use_package_imports` are
+opposites — the Dart team ships both and expects you to pick one. This flag
+serves the first; leave it off for the second.
 
 ## Removing duplicate and unused imports
 
