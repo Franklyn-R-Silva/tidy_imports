@@ -408,6 +408,50 @@ ImportSortData sortImports(
   return ImportSortData(sortedFile, true, duplicatesRemoved: duplicatesRemoved);
 }
 
+/// Every `import`, `export` and `part` URI in [lines], in source order.
+///
+/// Shares the sorter's scanner, so a directive inside a `/* */` block or a
+/// string literal is text here too — the import graph should not grow an edge
+/// from code that was commented out.
+///
+/// `part` counts: a part file is never imported, only parted, and leaving the
+/// directive out would make every generated `.g.dart` look unreferenced.
+List<String> directiveUris(List<String> lines) {
+  const keywords = ['import ', 'export ', 'part '];
+  final uris = <String>[];
+  final scanner = _SourceScanner();
+
+  var index = 0;
+  while (index < lines.length) {
+    final line = lines[index];
+    if (scanner.startsInCode) {
+      var start = index;
+      while (start < lines.length && _isIgnorePragma(lines[start])) {
+        start++;
+      }
+      if (start < lines.length &&
+          keywords.any(lines[start].startsWith) &&
+          !lines[start].startsWith('part of')) {
+        final span = _scanDirective(lines, start);
+        if (span > 0) {
+          final uri = _directiveUri(lines[start]);
+          if (uri != null) {
+            uris.add(uri);
+            for (var i = index; i < start + span; i++) {
+              scanner.consume(lines[i]);
+            }
+            index = start + span;
+            continue;
+          }
+        }
+      }
+    }
+    scanner.consume(line);
+    index++;
+  }
+  return uris;
+}
+
 /// Matches the quoted URI of a directive.
 final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
 

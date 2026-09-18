@@ -67,6 +67,11 @@ Options
   config file for a single run: --no-emojis, --comments, --no-sort-exports.
 
 Run modes
+      --report                   Read the project's own import graph and say
+                                 what it found: import cycles, and files under
+                                 lib/ that nothing refers to. Sorts nothing,
+                                 writes nothing. Add --exit-if-changed to fail
+                                 a CI run on a finding.
       --dry-run                  Report what would change; write nothing.
       --exit-if-changed          Exit 1 if anything is unsorted. For CI.
       --ignore-config            Ignore tidy_imports.yaml and the pubspec block.
@@ -84,6 +89,7 @@ Examples
   dart run tidy_imports lib/main.dart
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
+  dart run tidy_imports --report          # cycles and dead files
   dart run tidy_imports --flat            # satisfy directives_ordering
   dart run tidy_imports --remove-unused --remove-duplicates
   dart run tidy_imports --no-emojis
