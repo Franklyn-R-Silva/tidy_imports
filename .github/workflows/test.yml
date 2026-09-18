@@ -25,5 +25,23 @@ jobs:
       - name: Analyze
         run: dart analyze --fatal-infos
 
-      - name: Run tests
-        run: dart test
+      # pub.dev renders CHANGELOG.md top-down, so a section in the wrong place
+      # advertises the wrong version as current. It has happened twice here.
+      - name: Check CHANGELOG order
+        run: dart run tool/check_changelog.dart
+
+      - name: Run tests with coverage
+        run: |
+          dart pub global activate coverage
+          dart test --coverage=.coverage
+          dart pub global run coverage:format_coverage \
+            --lcov --in=.coverage --out=lcov.info --report-on=lib
+
+      - name: Check coverage
+        run: dart run tool/check_coverage.dart lcov.info 85
+
+      # Catches packaging problems — a missing file, a bad pubspec, an oversized
+      # archive — on the PR instead of at release time, when the version is
+      # already tagged and the mistake is permanent.
+      - name: Validate the published package
+        run: dart pub publish --dry-run
