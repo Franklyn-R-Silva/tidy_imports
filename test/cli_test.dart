@@ -346,6 +346,71 @@ void main() {}
     );
   });
 
+  group('--report', () {
+    void writeProject() {
+      libFile('main.dart').writeAsStringSync("import 'a.dart';\n");
+      libFile('a.dart').writeAsStringSync("import 'b.dart';\n");
+      libFile('b.dart').writeAsStringSync("import 'a.dart';\n");
+      libFile('dead.dart').writeAsStringSync('class Dead {}\n');
+      libFile('model.dart').writeAsStringSync("part 'model.g.dart';\n");
+      libFile('model.g.dart').writeAsStringSync("part of 'model.dart';\n");
+    }
+
+    test('names the files in a cycle', () {
+      writeProject();
+
+      final result = run(['--report']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('1 import cycle'));
+      expect(result.stdout, contains('lib/a.dart'));
+      expect(result.stdout, contains('lib/b.dart'));
+    });
+
+    test('names a file nothing refers to, and spares a parted one', () {
+      writeProject();
+
+      final result = run(['--report']);
+
+      expect(result.stdout, contains('lib/dead.dart'));
+      expect(
+        result.stdout,
+        isNot(contains('lib/model.g.dart')),
+        reason: 'a part is referenced by the file that parts it',
+      );
+    });
+
+    test('spares lib/main.dart, which is an entry point', () {
+      writeProject();
+
+      expect(run(['--report']).stdout, isNot(contains('lib/main.dart')));
+    });
+
+    test('writes nothing', () {
+      const unsortedFile = "import 'package:demo/z.dart';\n"
+          "import 'dart:io';\n"
+          '\n'
+          'void main() {}\n';
+      final file = libFile('main.dart')..writeAsStringSync(unsortedFile);
+
+      expect(run(['--report']).exitCode, 0);
+      expect(file.readAsStringSync(), unsortedFile);
+    });
+
+    test('with --exit-if-changed it fails on a finding', () {
+      writeProject();
+
+      expect(run(['--report', '--exit-if-changed']).exitCode, 1);
+    });
+
+    test('with --exit-if-changed a clean project passes', () {
+      libFile('main.dart').writeAsStringSync("import 'a.dart';\n");
+      libFile('a.dart').writeAsStringSync('class A {}\n');
+
+      expect(run(['--report', '--exit-if-changed']).exitCode, 0);
+    });
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 

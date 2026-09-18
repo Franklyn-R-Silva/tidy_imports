@@ -185,6 +185,7 @@ prefer the tighter output, `--no-separate-relative-imports` or
 | `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
 | `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
 | `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
+| `--report` | | Read the import graph: cycles and unreferenced files. Writes nothing |
 | `--dry-run` | | Preview changes without writing files |
 | `--exit-if-changed` | | Exit with code 1 if any file would change |
 | `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
@@ -350,6 +351,54 @@ export 'package:acme_shared/utils.dart';
 export 'src/models/user.dart';
 export 'src/widgets/button.dart';
 ```
+
+## Reading your import graph
+
+`tidy_imports` already parses every directive in your project on every run.
+Those directives *are* a dependency graph — `--report` says what it shows,
+sorts nothing and writes nothing:
+
+```sh
+dart run tidy_imports --report
+```
+
+```
+┏━━ Reading the import graph of 9 files
+┃  ✖ 1 import cycle:
+┃     lib/core/api.dart → lib/core/db.dart → lib/features/home.dart → lib/core/api.dart
+┃  ! 2 files nothing refers to:
+┃     lib/core/legacy_cart.dart
+┃     lib/core/old_checkout.dart
+┗━━ • 3 findings
+```
+
+**Import cycles.** Dart allows them, so nothing in the toolchain points them
+out — but two files in a cycle cannot be read, tested or moved apart
+independently. The report names the whole loop, not just one edge of it.
+
+**Files nothing refers to.** Different from an unused *import*: this is a whole
+file that no `import`, `export` or `part` in the project mentions. In a
+long-lived app there are usually more than you expect.
+
+`part` directives count as references, so a generated `.g.dart` is never
+reported. `lib/main.dart` and `lib/<your_package>.dart` are entry points and
+are never reported either, nor is anything outside `lib/`.
+
+### In CI
+
+```sh
+dart run tidy_imports --report --exit-if-changed
+```
+
+Exits 1 on any finding, so a cycle introduced by a pull request fails the build
+instead of settling in.
+
+### What it cannot see
+
+The graph is built from directives, nothing else. Code reached by
+`build_runner`, reflection, or a path assembled at runtime is invisible to it,
+so an "unreferenced" file is a question to answer, not an instruction to follow.
+Read before deleting.
 
 ## Matching Dart's own lints
 

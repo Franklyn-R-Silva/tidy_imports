@@ -11,6 +11,7 @@ import 'package:yaml/yaml.dart';
 import 'package:tidy_imports/args.dart' as local_args;
 import 'package:tidy_imports/config.dart';
 import 'package:tidy_imports/files.dart' as files;
+import 'package:tidy_imports/graph.dart';
 import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
 import 'package:tidy_imports/sort.dart' as sort;
 
@@ -40,7 +41,8 @@ void main(List<String> args) {
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
-    ..addFlag('dry-run', negatable: false);
+    ..addFlag('dry-run', negatable: false)
+    ..addFlag('report', negatable: false);
 
   final argResults = parser.parse(args);
 
@@ -166,6 +168,13 @@ void main(List<String> args) {
 
   // Both dry-run and exit-if-changed are read-only: they never write files.
   final readOnly = dryRun || exitOnChange;
+
+  // `--report` answers questions about the project rather than tidying it, so
+  // it runs on its own and writes nothing at all.
+  if (argResults['report'] == true) {
+    exit(_report(dartFiles, currentPath, packageName,
+        failOnFindings: exitOnChange));
+  }
 
   final label = readOnly ? 'Checking' : 'Sorting';
   stdout.write('┏━━ $label ${dartFiles.length} dart files');
@@ -347,4 +356,65 @@ String? _libRelativePath(String projectPath, String filePath) {
   const lib = '/lib/';
   final relative = files.toPosix(filePath.replaceFirst(projectPath, ''));
   return relative.startsWith(lib) ? relative.substring(lib.length) : null;
+}
+
+/// Prints what the project's own import graph says about it.
+///
+/// Returns the exit code: 1 when [failOnFindings] and something was found, so
+/// `--report --exit-if-changed` can hold a line in CI, 0 otherwise.
+int _report(
+  Map<String, File> dartFiles,
+  String currentPath,
+  String packageName, {
+  required bool failOnFindings,
+}) {
+  final directives = <String, List<String>>{};
+  for (final entry in dartFiles.entries) {
+    final path = files
+        .toPosix(entry.key.replaceFirst(currentPath, ''))
+        .replaceFirst(RegExp('^/'), '');
+    directives[path] = sort.directiveUris(
+        const LineSplitter().convert(entry.value.readAsStringSync()));
+  }
+
+  final graph = ImportGraph.build(directives, packageName);
+  final cycles = graph.cycles();
+
+  // An entry point is unreferenced by definition. `lib/<package>.dart` is the
+  // package's public face, `lib/main.dart` an app's; everything outside `lib/`
+  // is already excluded by [ImportGraph.unreferenced].
+  final orphans = graph.unreferenced(roots: {
+    'lib/$packageName.dart',
+    'lib/main.dart',
+  });
+
+  stdout.writeln('┏━━ Reading the import graph of ${directives.length} files');
+
+  if (cycles.isEmpty) {
+    stdout.writeln('┃  ${'✔'.green()} No import cycles');
+  } else {
+    stdout.writeln('┃  ${'✖'.red()} ${cycles.length} import '
+        '${cycles.length == 1 ? 'cycle' : 'cycles'}:');
+    for (final cycle in cycles) {
+      stdout.writeln('┃     ${cycle.join(' → ')} → ${cycle.first}');
+    }
+  }
+
+  if (orphans.isEmpty) {
+    stdout.writeln('┃  ${'✔'.green()} Every file under lib/ is referenced');
+  } else {
+    stdout.writeln('┃  ${'!'.yellow()} ${orphans.length} '
+        '${orphans.length == 1 ? 'file' : 'files'} nothing refers to:');
+    for (final orphan in orphans) {
+      stdout.writeln('┃     $orphan');
+    }
+    stdout.writeln('┃     (build_runner, reflection and dynamic loading are '
+        'invisible here — read before deleting)');
+  }
+
+  final findings = cycles.length + orphans.length;
+  stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
+      '$findings ${findings == 1 ? 'finding' : 'findings'}');
+
+  return failOnFindings && findings > 0 ? 1 : 0;
 }

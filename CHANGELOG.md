@@ -1,3 +1,44 @@
+## 2.1.0 (2026-09-18)
+
+`tidy_imports` has always parsed every directive in the project on every run,
+then thrown the result away. Those directives are a dependency graph, and
+`--report` is what it has to say:
+
+```
+┏━━ Reading the import graph of 9 files
+┃  ✖ 1 import cycle:
+┃     lib/core/api.dart → lib/core/db.dart → lib/features/home.dart → lib/core/api.dart
+┃  ! 2 files nothing refers to:
+┃     lib/core/legacy_cart.dart
+┃     lib/core/old_checkout.dart
+┗━━ • 3 findings
+```
+
+**Import cycles.** Dart permits them, so no tool in the chain mentions them —
+yet two files in a cycle cannot be read, tested or moved apart on their own.
+The whole loop is named, not one edge of it.
+
+**Files nothing refers to.** Not an unused *import*: a whole file that no
+`import`, `export` or `part` anywhere in the project mentions. `part` counts as
+a reference, so generated `.g.dart` files are never reported, and entry points
+— `lib/main.dart`, `lib/<your_package>.dart`, anything outside `lib/` — are
+never reported either.
+
+The report sorts nothing and writes nothing. With `--exit-if-changed` it exits
+1 on a finding, so a cycle introduced by a pull request fails the build instead
+of settling in.
+
+It sees directives and nothing else: code reached through `build_runner`,
+reflection or a runtime path is invisible to it. An unreferenced file is a
+question to answer, not an instruction to follow.
+
+### Features
+
+* `--report` — import cycles and unreferenced files, from the scan that was
+  already happening
+* `ImportGraph` and `resolveUri` in `lib/graph.dart`, and `directiveUris` in
+  `lib/sort.dart`, are public: the graph is usable without the CLI
+
 ## 2.0.0 (2026-09-18)
 
 One default changes, and that is the whole reason for the major version.
