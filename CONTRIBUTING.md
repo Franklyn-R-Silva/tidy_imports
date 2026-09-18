@@ -21,13 +21,17 @@ dart run bin/tidy_imports.dart
 
 ## Running Quality Checks
 
+Run these before pushing — they are the same gates CI applies, so a clean run
+here means a green PR:
+
 ```sh
-dart analyze          # static analysis
-dart format .         # auto-format
-dart test             # test suite
+dart format .                          # auto-format
+dart analyze --fatal-infos             # static analysis; infos fail the build
+dart test                              # test suite
+dart run tool/check_version_sync.dart  # pubspec / version.dart / CHANGELOG agree
 ```
 
-All three must pass with no issues before a PR will be merged.
+Note `--fatal-infos`: a lint *info* fails CI, not just a warning.
 
 ## Commit Message Format
 
@@ -137,7 +141,34 @@ tool/
 
 ## Opening a Pull Request
 
+`main` is protected: every change arrives through a PR, and a PR cannot be
+merged until CI is green.
+
 1. Fork the repository and create a branch from `main`.
-2. Make your changes following the coding style in the existing files.
-3. Add or update tests in `test/sort_test.dart`.
-4. Open a PR with a clear description of what changed and why.
+2. Make your changes, following the style of the files around them.
+3. Add or update tests. Where they go depends on what you touched:
+   - `test/sort_test.dart` — core grouping and ordering
+   - `test/directives_test.dart` — directive shapes, comments, strings, exports
+   - `test/features_test.dart` — custom tiers, config loading, pubspec sorting
+   - `test/cli_test.dart` — anything only the binary does: writing files, exit
+     codes, flags, config discovery
+4. Open a PR with a Conventional Commit title and a description of what changed
+   and why.
+
+### What has to pass
+
+| Check | What it runs |
+|---|---|
+| `check` | format, `analyze --fatal-infos`, version sync, `pub publish --dry-run` |
+| `test (stable)` | the suite, plus line coverage of `lib/` at 85% or above |
+| `test (beta)` | the suite on the next SDK |
+| `min SDK (3.0.0)` | that the package still resolves and runs on the oldest SDK `pubspec.yaml` claims |
+
+Your branch also has to be up to date with `main` before merging. The branch is
+deleted automatically once the PR lands.
+
+### Dependency updates
+
+Dependabot opens PRs monthly for GitHub Actions and for the pub dependencies,
+the latter grouped into a single PR. They go through the same checks as
+anything else.
