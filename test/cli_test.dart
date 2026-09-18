@@ -171,6 +171,40 @@ export 'package:demo/z.dart';
     expect(run(['--sort-exports', '--exit-if-changed']).exitCode, 0);
   });
 
+  test('a positional pattern with no .dart suffix still filters', () {
+    Directory('${temp.path}/lib/sub').createSync(recursive: true);
+    final outside = libFile('main.dart')..writeAsStringSync(unsorted);
+    final inside = File('${temp.path}/lib/sub/nested.dart')
+      ..writeAsStringSync(unsorted);
+
+    // Forward slashes, on every platform: the pattern is matched against a
+    // path normalised to `/`, so this works on Windows too.
+    expect(run(['lib/sub/']).exitCode, 0);
+
+    expect(inside.readAsStringSync(), sorted);
+    expect(
+      outside.readAsStringSync(),
+      unsorted,
+      reason: 'a filtered run must not touch files outside the pattern',
+    );
+  });
+
+  test('reports an invalid ignored_files pattern instead of crashing', () {
+    File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  ignored_files:
+    - lib/[a-z.dart
+''');
+    libFile('main.dart').writeAsStringSync(unsorted);
+
+    final result = run();
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('invalid ignored_files entry'));
+    expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 

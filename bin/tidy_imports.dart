@@ -116,9 +116,22 @@ void main(List<String> args) {
     dartFiles.remove(registrantPath);
   }
 
-  for (final pattern in ignoredFiles) {
+  // `ignored_files` patterns are regular expressions too, and a malformed one
+  // used to surface as a raw stack trace from inside removeWhere. Compile them
+  // the same way positional patterns are compiled: once, up front, reported as
+  // the user error they are.
+  final List<RegExp> ignoreMatchers;
+  try {
+    ignoreMatchers = files.compilePatterns(ignoredFiles, 'ignored_files entry');
+  } on FormatException catch (e) {
+    stderr.writeln('Error: ${e.message}');
+    exit(1);
+  }
+
+  for (final matcher in ignoreMatchers) {
     dartFiles.removeWhere(
-      (key, _) => RegExp(pattern).hasMatch(key.replaceFirst(currentPath, '')),
+      (key, _) =>
+          matcher.hasMatch(files.toPosix(key.replaceFirst(currentPath, ''))),
     );
   }
 
@@ -142,16 +155,16 @@ void main(List<String> args) {
     final rawContent = file.readAsStringSync();
     final usesCrlf = rawContent.contains('\r\n');
 
-    // Pass exitIfChanged: false so the whole project is checked in one pass —
-    // every unsorted file is reported instead of aborting on the first one
-    // (issue import_sorter#87).
+    // The third positional argument is the deprecated, inert `exitIfChanged`.
+    // Checking is this loop's job: it runs over the whole project and fails
+    // once at the end, so every unsorted file is reported instead of the run
+    // aborting on the first one (issue import_sorter#87).
     final result = sort.sortImports(
       const LineSplitter().convert(rawContent),
       packageName,
       emojis,
       false,
       noComments,
-      filePath: filePath.replaceFirst(currentPath, ''),
       noBlankLines: noBlankLines,
       customTiers: customTiers,
       groupProjectByFolder: groupByFolder,
