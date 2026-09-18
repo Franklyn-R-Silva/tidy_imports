@@ -71,7 +71,7 @@ void runSuite(bool emojis, bool noComments) {
       '$dartComment$dartImports\n'
       '$flutterComment$flutterImports\n'
       '$packageComment$packageImports\n'
-      '$projectComment$projectImports\n',
+      '$projectComment$projectImports',
     );
   });
 

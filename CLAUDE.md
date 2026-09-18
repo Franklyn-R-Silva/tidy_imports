@@ -49,6 +49,8 @@ The CLI always resolves its target from `Directory.current`, so running it from 
 
 **Emission groups all follow the same shape**: `addSeparator(hasPrecedingGroup)` → comment → `sort()` → append, with `hasPrecedingGroup` set to `true` afterwards. Package-form and relative-form imports are kept in separate buckets and appended in that order (project and test groups both do this), because a plain `sort()` over both would interleave `import 'package:...'` and `import 'foo.dart'` by ASCII. `separateRelativeImports` (issue #1) puts a blank line at that bucket boundary so `dart format` 3.13+ — which separates the `package:`/relative sections itself — stops fighting the sorter; it is suppressed under `noBlankLines` and skipped on the `groupProjectByFolder` path, which already breaks there.
 
+**The body below the block is re-emitted, never copied through.** After the last group, `sortImports` strips the blank lines that separated the directives from the rest of the file and re-adds exactly one — and *none* when nothing follows, so a barrel file ends on its last directive instead of a stray blank line `dart format` would strip right back out, leaving the two tools undoing each other (issue #6). Blank lines *after* the first line of code are the author's and are kept.
+
 **`pubspec.lock` is optional.** It is absent in pub workspaces/monorepos; the tool falls back to an empty dependency list and only loses Flutter plugin-registrant skipping. Don't reintroduce a hard read.
 
 **Public API surface.** `lib/tidy_imports.dart` is an export barrel required by pub.dev; new public symbols need an entry there.
