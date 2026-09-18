@@ -3,6 +3,6 @@
 /// Bump it in the same commit as `version:` in `pubspec.yaml` and the new
 /// `CHANGELOG.md` section; `tool/check_version_sync.dart` fails the build when
 /// the three disagree.
-const packageVersion = '1.5.0';
+const packageVersion = '1.6.0';
 
 const packageName = 'tidy_imports';

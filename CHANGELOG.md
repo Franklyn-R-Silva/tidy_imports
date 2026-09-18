@@ -1,3 +1,37 @@
+## 1.6.0 (2026-09-18)
+
+Two things a sorter can do to your imports besides ordering them, both off by
+default. Deleting a line you did not ask to have deleted is how a formatter
+loses your trust, so each is opt-in — by flag or by config key.
+
+`--remove-duplicates` / `remove_duplicates:` folds an import written identically
+twice into the first one and tells you how many it dropped. It compares text,
+with whitespace collapsed, so a directive `dart format` wrapped over two lines
+matches its one-line twin. Imports that merely point at the same library are
+left alone — a different prefix, a different `show` clause, or a trailing
+comment only one of them carries — because folding those changes what the file
+means.
+
+`--remove-unused` / `remove_unused:` runs `dart fix --apply --code=unused_import`
+over the project first, then sorts, so the gaps it leaves are tidied in the same
+pass. It shells out deliberately: deciding an import is unused means resolving
+every identifier to the library that declares it, extension methods included,
+and the analyzer in your SDK already does that correctly. It needs the Dart SDK
+on `PATH` and a project that resolves, and costs an analyzer pass.
+
+`--dry-run` and `--exit-if-changed` stay read-only through both: `dart fix` runs
+in its own dry-run mode, and duplicates are counted rather than removed.
+
+### Features
+
+* `--remove-duplicates` and `--remove-unused`, both defaulting to false
+* `ImportSortData.duplicatesRemoved` reports what was folded away
+
+### Docs
+
+* the example is a runnable five-part tour instead of sixty lines of comment
+* pub points and likes badges
+
 ## [1.5.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.1...v1.5.0) (2026-09-18)
 
 A line that only *looks* like a directive is no longer treated as one. An
