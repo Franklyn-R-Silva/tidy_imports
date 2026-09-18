@@ -5,6 +5,19 @@
 
 * stop writing a blank line below the last directive ([7d816f1](https://github.com/Franklyn-R-Silva/tidy_imports/commit/7d816f1ab0301fe57c6c516196aae9f6727867d9)), closes [#6](https://github.com/Franklyn-R-Silva/tidy_imports/issues/6)
 
+## [1.5.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.4.1...v1.5.0) (2026-09-18)
+
+
+### Features
+
+* let every config-backed flag be switched off again ([b5f8494](https://github.com/Franklyn-R-Silva/tidy_imports/commit/b5f8494d911bc756e10b630747251e63e2e894b5))
+
+
+### Bug Fixes
+
+* harden the directive scanner, file patterns and CLI flags ([fff10f5](https://github.com/Franklyn-R-Silva/tidy_imports/commit/fff10f55649aeae3c7644d9f2500e430b3c057bc))
+* stop moving text that only looks like a directive ([5ee96fd](https://github.com/Franklyn-R-Silva/tidy_imports/commit/5ee96fdf103c5fe53972c1c1ee4ef3bc3b041dd3))
+
 ## [1.4.0](https://github.com/Franklyn-R-Silva/tidy_imports/compare/v1.3.0...v1.4.0) (2026-08-31)
 
 Directives are now read as directives, not as lines that happen to look like
