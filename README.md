@@ -174,6 +174,7 @@ prefer the tighter output, `--no-separate-relative-imports` or
 | `--emojis` | `-e` | Add emojis to import group comments |
 | `--no-comments` | | Omit group comments entirely |
 | `--no-blank-lines` | | Omit blank lines between import groups |
+| `--blank-lines` | | Force them back on, over a config that disabled them |
 | `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
 | `--sort-exports` | | Also sort `export` directives into their own block |
 | `--group-by-folder` | | Separate project imports by subfolder |
@@ -538,8 +539,10 @@ sections. Because `tidy_imports` keeps `package:<your_project>/…` and relative
 imports together in one **Project imports:** block, the two tools used to undo
 each other on every run.
 
-Pass `--separate-relative-imports` (or set `separate_relative_imports: true`) to
-emit that blank line up front, so both tools agree and the file stops flip-flopping:
+**This is on by default since 2.0.0** — it emits that blank line up front, so
+both tools agree and the file stops flip-flopping. Turn it off with
+`--no-separate-relative-imports` or `separate_relative_imports: false` if you
+prefer the tighter block and do not run `dart format`:
 
 ```dart
 // Project imports:
@@ -693,7 +696,11 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | Folder grouping depth | Not available | `--group-by-folder-depth=<n>` |
 | Separate group for test doubles | Not available | `--test-imports` |
 | Sort `export` directives | Not available | `--sort-exports` |
-| `dart format` 3.13+ import sections | Fights the formatter | `--separate-relative-imports` |
+| `dart format` 3.13+ import sections | Fights the formatter | Agrees with it, by default |
+| Remove duplicate imports | Requested in #57, still open | `--remove-duplicates` |
+| Remove unused imports | Requested in #56, still open | `--remove-unused` |
+| `directives_ordering` lint | Requested in #58 / #28, still open | `--flat` |
+| Rewrite own imports as relative | Requested in #59, still open | `--relative-imports` |
 | Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
 | Group comments inside string literals | Silently deleted | Preserved |
 | Multi-line imports (wrapped `show`/`as`) | Dropped out of the sorted block | Sorted like any other import |

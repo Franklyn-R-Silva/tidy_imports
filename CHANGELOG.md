@@ -1,3 +1,45 @@
+## 2.0.0 (2026-09-18)
+
+One default changes, and that is the whole reason for the major version.
+
+**`separate_relative_imports` is now on.** Since Dart 3.13 `dart format` puts a
+blank line between the `package:` and relative import sections itself. With this
+off, `tidy_imports` took it out and `dart format` put it back — the two tools
+undid each other on every run, forever (issue #1). It is a bug fix wearing the
+clothes of a preference, so it ships on.
+
+That changes output: a file with both `package:<your_package>/…` and relative
+project imports gains a blank line between them, and a CI step on
+`--exit-if-changed` fails once until the project is re-sorted. That surprise is
+exactly what a major version is for — `^1.6.0` will not pick this up on its own.
+`--no-separate-relative-imports`, or `separate_relative_imports: false`, restores
+the previous output.
+
+Nothing else changed its default, and everything new below is off until asked
+for. The README now has a **What is on by default** section that lists the three
+things that are, and how to switch each off.
+
+### Features
+
+* `--flat` / `flat:` drops the groups for one alphabetical run per section —
+  `dart:`, then `package:`, then relative, exports in their own block below.
+  That is the order the `directives_ordering` lint expects; the default grouping
+  trips it, because `package:flutter/…` sits above the other packages and breaks
+  alphabetical order among them. Verified against the lint: one violation
+  before, none after (import_sorter#58, #28)
+* `--relative-imports` / `relative_imports:` rewrites `package:<your_package>/…`
+  imports as paths relative to the importing file, which is what
+  `prefer_relative_imports` wants. Only under `lib/` — a file in `test/` or
+  `bin/` cannot reach `lib/` with a relative URI, so its imports are left alone.
+  Prefixes, `show`/`hide` clauses and trailing comments survive the rewrite
+  (import_sorter#59)
+
+### Deprecations
+
+* `sortImports`' `exitIfChanged` and `filePath` parameters, inert since 1.4.2,
+  outlive this release on purpose: removing them here would have made the
+  upgrade two changes instead of one. They go in 3.0.0
+
 ## 1.6.0 (2026-09-18)
 
 Two things a sorter can do to your imports besides ordering them, both off by

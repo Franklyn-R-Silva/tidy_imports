@@ -61,6 +61,7 @@ Options
                                  Dart SDK on PATH. Off by default.
       --no-comments              Leave out the group comments.
       --no-blank-lines           Leave out the blank lines between groups.
+                                 (--blank-lines forces them back on.)
 
   Each flag above is negatable. Pass the opposite form to override your
   config file for a single run: --no-emojis, --comments, --no-sort-exports.

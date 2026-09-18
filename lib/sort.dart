@@ -46,13 +46,14 @@ ImportSortData sortImports(
   @Deprecated(
     'Has no effect since 1.4.2: lib/ no longer calls exit(). bin/ checks the '
     'whole project and fails once, so every unsorted file gets reported '
-    '(import_sorter#87). Will be removed in 2.0.0.',
+    '(import_sorter#87). Kept through 2.0.0 so the upgrade is one change, not '
+    'two; removed in 3.0.0.',
   )
   bool exitIfChanged,
   bool noComments, {
   @Deprecated(
     'Has no effect since 1.4.2; it only ever fed the message the removed '
-    'exit() printed. Will be removed in 2.0.0.',
+    'exit() printed. Kept through 2.0.0; removed in 3.0.0.',
   )
   String? filePath,
   bool noBlankLines = false,
