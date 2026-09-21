@@ -46,7 +46,17 @@ void main(List<String> args) {
     ..addFlag('dry-run', negatable: false)
     ..addFlag('report', negatable: false);
 
-  final argResults = parser.parse(args);
+  // A typo in a flag is the same kind of mistake as a typo in a file pattern,
+  // and used to be the one that printed a stack trace: `ArgParserException`
+  // reached the top of main() with eight frames of `package:args` under it.
+  final ArgResults argResults;
+  try {
+    argResults = parser.parse(args);
+  } on FormatException catch (e) {
+    stderr.writeln('Error: ${e.message}');
+    stderr.writeln('Run `tidy_imports --help` for the options.');
+    exit(1);
+  }
 
   if (argResults['help'] == true) {
     local_args.outputHelp();
@@ -65,8 +75,35 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final pubspecYaml = loadYaml(pubspecYamlFile.readAsStringSync());
-  final packageName = pubspecYaml['name'] as String;
+  final dynamic parsedPubspec;
+  try {
+    parsedPubspec = loadYaml(pubspecYamlFile.readAsStringSync());
+  } on Object catch (e) {
+    // A YamlException draws the offending snippet over four more lines; the
+    // first one carries the position, which is the half worth printing.
+    stderr.writeln('Error: pubspec.yaml could not be read: '
+        '${'$e'.split('\n').first}');
+    exit(1);
+  }
+  if (parsedPubspec is! YamlMap) {
+    stderr.writeln('Error: pubspec.yaml is not a map of keys.');
+    exit(1);
+  }
+  final pubspecYaml = parsedPubspec;
+
+  // The package name is what tells your own imports from everyone else's, so
+  // there is no useful run without it. It used to fail as
+  // `type 'Null' is not a subtype of type 'String' in type cast`.
+  final declaredName = pubspecYaml['name'];
+  if (declaredName is! String || declaredName.isEmpty) {
+    stderr.writeln('Error: pubspec.yaml declares no `name:`.');
+    stderr.writeln(
+      'tidy_imports needs it to tell the imports of your own package from '
+      'the ones that come from pub.',
+    );
+    exit(1);
+  }
+  final packageName = declaredName;
 
   // pubspec.lock may be absent in pub workspaces / monorepos where a
   // root-level lock file is used instead. Fall back to empty dependencies
@@ -74,13 +111,19 @@ void main(List<String> args) {
   final pubspecLockFile = File('$currentPath/pubspec.lock');
   final dependencies = <dynamic>[];
   if (pubspecLockFile.existsSync()) {
-    final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
-    dependencies.addAll((pubspecLock['packages'] as YamlMap).keys);
+    try {
+      final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
+      final packages = pubspecLock is YamlMap ? pubspecLock['packages'] : null;
+      if (packages is YamlMap) dependencies.addAll(packages.keys);
+    } on Object {
+      // Same fallback as no lock file at all: the only thing the list feeds is
+      // Flutter plugin-registrant skipping, which is not worth a failed run.
+    }
   }
 
   final config = argResults['ignore-config'] == true
       ? TidyConfig.fromYaml(null)
-      : TidyConfig.load(currentPath, pubspecYaml as YamlMap);
+      : TidyConfig.load(currentPath, pubspecYaml);
 
   // Configuration problems are said out loud, and this is the only place that
   // says them — `lib/` collects them as data and prints nothing.
@@ -210,7 +253,7 @@ void main(List<String> args) {
     exit(_report(
       currentPath,
       packageName,
-      pubspecYaml as YamlMap,
+      pubspecYaml,
       patterns: argResults.rest,
       ignoreMatchers: ignoreMatchers,
       reportRoots: config.reportRoots,

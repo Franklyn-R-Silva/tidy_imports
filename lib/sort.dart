@@ -118,16 +118,25 @@ ImportSortData sortImports(
   final flatExports = <_Directive>[];
 
   bool startsDirective(String line) =>
-      line.startsWith('import ') || (sortExports && line.startsWith('export '));
+      _opensImport.hasMatch(line) ||
+      (sortExports && _opensExport.hasMatch(line));
 
   // Whether a directive begins at [index], looking past the comment lines
   // that belong to it. Decides whether a header line above is ours — and a
   // header followed by a note about the import below it is still ours.
+  //
+  // The lookahead deliberately ignores [attachComments]. A plain `//` comment
+  // sitting between one of our own headers and a directive is a shape only a
+  // previous `attachComments: true` run writes, so refusing to look past it
+  // when the option is off cost that block its header: the old one stayed
+  // behind as body text, a second copy was regenerated above the import, and
+  // the comment was orphaned under the duplicate. The next run read that as
+  // already sorted, so the file never healed — switching the option off once
+  // corrupted the block permanently.
   bool directiveFollows(int index) {
     var i = index;
     while (i < lines.length &&
-        (_isIgnorePragma(lines[i]) ||
-            (attachComments && _isAttachedComment(lines[i])))) {
+        (_isIgnorePragma(lines[i]) || _isAttachedComment(lines[i]))) {
       i++;
     }
     return i < lines.length && startsDirective(lines[i]);
@@ -254,10 +263,7 @@ ImportSortData sortImports(
             if (removeDuplicates && !seen.add(directive.signature)) {
               duplicatesRemoved++;
             } else {
-              classify(
-                directive,
-                isExport: body.first.startsWith('export '),
-              );
+              classify(directive, isExport: _opensExport.hasMatch(body.first));
             }
             // A directive can carry a `/*` or a string of its own, so the
             // scanner has to walk the lines the loop skips over.
@@ -386,17 +392,37 @@ ImportSortData sortImports(
     );
   }
 
+  // One run per section, with a blank line where the section changes — which
+  // is exactly where `dart format` 3.13+ puts one. Emitting none left the
+  // formatter adding all three and the next run taking them away again, so
+  // `--flat` fought the formatter on every single run (issue #1, in the one
+  // mode that had no separator at all). `--no-blank-lines` still gives the
+  // tight run: the lint reads order, not spacing.
+  void emitBySection(List<_Directive> directives) {
+    int? previous;
+    for (final directive in directives) {
+      final section = _section(directive.uri);
+      if (previous != null && section != previous && !noBlankLines) {
+        sortedLines.add('');
+      }
+      sortedLines
+        ..addAll(directive.leading)
+        ..addAll(directive.lines);
+      previous = section;
+    }
+  }
+
   if (flat) {
     // `directives_ordering` wants one alphabetical run per section, exports
     // in their own block below the imports. No headers: a comment between two
     // runs the lint considers one section would be a lie about the structure.
     _sortFlatly(flatImports);
     _sortFlatly(flatExports);
-    emit(flatImports);
+    emitBySection(flatImports);
     if (flatImports.isNotEmpty && flatExports.isNotEmpty && !noBlankLines) {
       sortedLines.add('');
     }
-    emit(flatExports);
+    emitBySection(flatExports);
   } else {
     emitBlock(imports, 'imports');
     emitBlock(exports, 'exports');
@@ -497,6 +523,16 @@ final _mainDeclaration = RegExp(
 
 /// Matches the quoted URI of a directive.
 final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
+
+/// Whether a line opens an `import` / an `export`.
+///
+/// The keyword may *end* the line — `import` with its URI on the next one is
+/// legal Dart, and [_directiveTargets] reads the URI from anywhere in the body
+/// precisely so that shape works — so it is matched up to whitespace or end of
+/// line. `startsWith('import ')` missed it, and the directive slid out of the
+/// sorted block: the failure the multi-line scanner exists to prevent.
+final _opensImport = RegExp(r'^import(?:\s|$)');
+final _opensExport = RegExp(r'^export(?:\s|$)');
 
 /// Whether [line] is a comment that belongs to the directive below it.
 bool _isAttachedComment(String line) {

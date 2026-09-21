@@ -1,3 +1,6 @@
+// Dart imports:
+import 'dart:convert';
+
 // Package imports:
 import 'package:test/test.dart';
 
@@ -90,6 +93,36 @@ import 'package:provider/provider.dart';
 
 void main() {}
 ''',
+      );
+    });
+
+    test('a directive whose keyword ends the line is sorted like any other',
+        () {
+      final lines = [
+        'import',
+        "    'package:demo/b.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(lines, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import
+    'package:demo/b.dart';
+
+void main() {}
+''',
+        reason: 'legal Dart, and directiveUris already read it — the sorter '
+            'matched `import ` with a trailing space, so the directive slid '
+            'out of the block instead',
       );
     });
 
@@ -411,8 +444,16 @@ void main() {}
 
       expect(
         result.sortedFile,
-        contains("import 'package:http/http.dart';\n\n// Package imports:"),
+        contains("import 'package:http/http.dart';\n"
+            '\n'
+            '// por que este import existe'),
         reason: 'the comment ends up below the block unless asked otherwise',
+      );
+      expect(
+        result.sortedFile.split('// Package imports:').length - 1,
+        1,
+        reason: 'and the header above it is not left behind with it. A second '
+            'copy below the block used to be exactly what happened',
       );
     });
 
@@ -499,6 +540,70 @@ void main() {}
           attachComments: true);
 
       expect(result.updated, isFalse);
+    });
+
+    test('turning --attach-comments back off does not duplicate the header',
+        () {
+      final attached = [
+        '// Dart imports:',
+        "import 'dart:async';",
+        '',
+        '// Package imports:',
+        '// http client',
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(attached, 'demo', false, false, false);
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:async';
+
+// Package imports:
+import 'package:http/http.dart';
+
+// http client
+
+void main() {}
+''',
+        reason: 'the note falling below the block is what the option being '
+            'off means. What must not happen is the header staying behind as '
+            'body text while a second copy is written above the import',
+      );
+      expect(
+        result.sortedFile.split('// Package imports:').length - 1,
+        1,
+        reason: 'one header, not two',
+      );
+    });
+
+    test('the block a toggled run leaves behind is not a corrupt fixed point',
+        () {
+      final attached = [
+        '// Dart imports:',
+        "import 'dart:async';",
+        '',
+        '// Package imports:',
+        '// http client',
+        "import 'package:http/http.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final once = sortImports(attached, 'demo', false, false, false);
+      final twice = sortImports(const LineSplitter().convert(once.sortedFile),
+          'demo', false, false, false);
+
+      expect(
+        twice.updated,
+        isFalse,
+        reason: 'the duplicated header used to read as already sorted, so '
+            'nothing ever repaired the file',
+      );
     });
 
     test('re-running a file with an // ignore: pragma makes no change', () {
@@ -1195,6 +1300,60 @@ void main() {}
         result.sortedFile,
         '''
 import 'dart:io';
+
+import 'package:args/args.dart';
+import 'package:demo/app.dart';
+import 'package:flutter/material.dart';
+
+import 'helper.dart';
+
+void main() {}
+''',
+      );
+    });
+
+    test('writes a blank line where the section changes, like dart format', () {
+      final result =
+          sortImports(mixed, 'demo', false, false, false, flat: true);
+      final blanks = result.sortedFile
+          .trimRight()
+          .split('\n')
+          .asMap()
+          .entries
+          .where((e) => e.value.isEmpty)
+          .map((e) => e.key)
+          .toList();
+
+      expect(
+        blanks.first,
+        1,
+        reason: 'dart format 3.13+ writes that line itself. With none here it '
+            'added all three and the next run took them away again, so the '
+            'two tools undid each other every run — issue #1, in the one mode '
+            'that had no separator at all',
+      );
+      expect(
+        blanks,
+        hasLength(3),
+        reason: 'dart:/package:, package:/relative, and the body below',
+      );
+    });
+
+    test('--no-blank-lines gives the tight run back', () {
+      final result = sortImports(
+        mixed,
+        'demo',
+        false,
+        false,
+        false,
+        flat: true,
+        noBlankLines: true,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+import 'dart:io';
 import 'package:args/args.dart';
 import 'package:demo/app.dart';
 import 'package:flutter/material.dart';
@@ -1202,6 +1361,8 @@ import 'helper.dart';
 
 void main() {}
 ''',
+        reason: 'the lint reads order, not spacing, so asking for no blank '
+            'lines is still an answer it accepts',
       );
     });
 
@@ -1265,7 +1426,9 @@ void main() {}
     test('re-running a flat file makes no change', () {
       const sorted = '''
 import 'dart:io';
+
 import 'package:args/args.dart';
+
 import 'helper.dart';
 
 void main() {}
@@ -1297,8 +1460,12 @@ void main() {}
       );
 
       expect(result.sortedFile, isNot(contains('//')));
-      expect(result.sortedFile.split('\n\n').length, 2,
-          reason: 'one run of imports, then the code');
+      expect(
+        result.sortedFile,
+        sortImports(mixed, 'demo', false, false, false, flat: true).sortedFile,
+        reason: 'grouping options shape groups, and flat has none — switching '
+            'them on has to change nothing at all, rather than half of it',
+      );
     });
   });
 

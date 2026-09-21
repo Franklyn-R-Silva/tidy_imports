@@ -21,6 +21,13 @@ library;
 export 'config.dart' show TidyConfig, CustomTier;
 export 'src/version.dart' show packageVersion, packageName;
 export 'graph.dart' show ImportGraph, resolveUri;
-export 'sort.dart' show directiveUris, sortImports, ImportSortData;
-export 'files.dart' show compilePatterns, dartFiles, toPosix;
+export 'sort.dart'
+    show declaresMain, directiveUris, sortImports, ImportSortData;
+export 'files.dart'
+    show
+        compilePatterns,
+        dartFiles,
+        reportDirectories,
+        standardDirectories,
+        toPosix;
 export 'pubspec_sort.dart' show sortPubspec;

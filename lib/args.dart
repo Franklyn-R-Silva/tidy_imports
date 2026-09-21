@@ -49,7 +49,11 @@ Options
       --flat                     Drop the groups: one alphabetical run per
                                  section (dart:, package:, relative), which is
                                  the order the `directives_ordering` lint
-                                 expects. Off by default.
+                                 expects. A blank line marks each section
+                                 boundary, where dart format 3.13+ writes one
+                                 too; --no-blank-lines gives the tight run
+                                 back. Exports move only with --sort-exports.
+                                 Off by default.
       --relative-imports         Rewrite package:<your_package>/… imports as
                                  relative paths, matching the
                                  `prefer_relative_imports` lint. Only inside

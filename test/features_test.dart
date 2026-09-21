@@ -1,3 +1,6 @@
+// Dart imports:
+import 'dart:io';
+
 // Package imports:
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
@@ -721,6 +724,24 @@ tidy_imports:
 
       expect(config.issues, hasLength(1));
       expect(config.issues.single, contains('tidy_imports:'));
+    });
+
+    test('a standalone file that does not parse is reported, not thrown', () {
+      final temp = Directory.systemTemp.createTempSync('tidy_imports_cfg_');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      File('${temp.path}/tidy_imports.yaml')
+          .writeAsStringSync('emojis: true\n  bad_indent: nope\n');
+
+      final config =
+          TidyConfig.load(temp.path, loadYaml('name: demo') as YamlMap);
+
+      expect(
+        config.issues.single,
+        allOf(contains('not valid YAML'), contains('line 2')),
+        reason: 'every other broken config is a sentence. This one threw a '
+            'five-line YAML stack trace for a missing colon',
+      );
+      expect(config.emojis, isFalse, reason: 'and the run goes on');
     });
 
     test('a standalone file written at the top level reports nothing', () {

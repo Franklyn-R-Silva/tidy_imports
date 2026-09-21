@@ -314,11 +314,41 @@ void main() {}
       file.readAsStringSync(),
       '''
 import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:flutter/material.dart';
 
 void main() {}
 ''',
+    );
+  });
+
+  test('--flat output is what dart format would already have written', () {
+    final file = libFile('main.dart')
+      ..writeAsStringSync("import 'package:args/args.dart';\n"
+          "import 'dart:io';\n"
+          "import 'helper.dart';\n"
+          '\n'
+          'void main() {}\n');
+
+    expect(run(['--flat']).exitCode, 0);
+    final flat = file.readAsStringSync();
+
+    final formatted = Process.runSync(
+      Platform.resolvedExecutable,
+      ['format', file.path],
+      workingDirectory: temp.path,
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+
+    expect(formatted.exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      flat,
+      reason: 'dart format 3.13+ writes a blank line at each section '
+          'boundary. Emitting none left the formatter adding them and the '
+          'next --flat run taking them away, forever (issue #1)',
     );
   });
 
@@ -657,6 +687,50 @@ void main() {}
         reason: 'the readable file is still sorted');
   });
 
+  test('an unknown flag is one error line, not a stack trace', () {
+    final file = libFile('main.dart')..writeAsStringSync(unsorted);
+
+    final result = run(['--sort-exprots']);
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('Could not find an option named'));
+    expect(result.stderr, contains('--help'));
+    expect(
+      result.stderr,
+      isNot(contains('package:args')),
+      reason: 'it used to reach the top of main() with eight frames under it',
+    );
+    expect(file.readAsStringSync(), unsorted);
+  });
+
+  test('a pubspec with no name: is an error, not a TypeError', () {
+    File('${temp.path}/pubspec.yaml').writeAsStringSync('description: none\n');
+    libFile('main.dart').writeAsStringSync(unsorted);
+
+    final result = run();
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('declares no `name:`'));
+    expect(
+      result.stderr,
+      isNot(contains('is not a subtype of')),
+      reason: "the name is what tells the project's own imports apart, so "
+          'there is no run without it — but the cast named only two types',
+    );
+  });
+
+  test('a pubspec that does not parse is an error, not a YamlException', () {
+    File('${temp.path}/pubspec.yaml')
+        .writeAsStringSync('name: demo\n  bad_indent: nope\n');
+    libFile('main.dart').writeAsStringSync(unsorted);
+
+    final result = run();
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('pubspec.yaml could not be read'));
+    expect(result.stderr, isNot(contains('package:yaml')));
+  });
+
   test('reports an invalid file pattern instead of crashing', () {
     libFile('main.dart').writeAsStringSync(unsorted);
 
@@ -709,6 +783,33 @@ void main() {}
         unsorted,
         reason: 'a refusal that had already rewritten the project would be a '
             'strange kind of refusal',
+      );
+    });
+
+    test('a config that does not parse warns and runs on the defaults', () {
+      final file = libFile('main.dart')..writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('emojis: true\n  bad_indent: nope\n');
+
+      final result = run();
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, contains('not valid YAML'));
+      expect(result.stderr, isNot(contains('package:yaml')));
+      expect(file.readAsStringSync(), sorted);
+    });
+
+    test('--strict-config refuses a config that does not parse', () {
+      final file = libFile('main.dart')..writeAsStringSync(unsorted);
+      configFile().writeAsStringSync('emojis: true\n  bad_indent: nope\n');
+
+      final result = run(['--strict-config']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('not valid YAML'));
+      expect(
+        file.readAsStringSync(),
+        unsorted,
+        reason: 'it refuses before the first file is touched',
       );
     });
 
