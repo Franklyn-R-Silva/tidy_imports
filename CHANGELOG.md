@@ -1,3 +1,65 @@
+## 2.5.0 (2026-09-21)
+
+Four ways to lose work, all of them quiet.
+
+`--flat` wrote no blank line anywhere. `dart format` 3.13+ writes one at every
+import section boundary, so the formatter added all three and the next `--flat`
+run took them away again — the same fight issue #1 settled for the grouped
+output, still running in the one mode that had no separator at all. Every run
+of either tool produced a diff, forever. `--flat` now writes those lines
+itself, and `--no-blank-lines` still gives back the tight run: the lint reads
+order, not spacing.
+
+Turning `--attach-comments` back off corrupted the block it had written, and
+the corruption was a fixed point. The header above an attached note stopped
+being recognised as one, so it stayed behind as body text while a second copy
+was written above the import — and the next run read that as already sorted, so
+nothing ever repaired the file. One flag dropped from one command line, and the
+block never recovered.
+
+A directive whose keyword *ends* the line — `import` with its URI on the next
+one, which is legal Dart and which the import graph already read — was not a
+directive to the sorter, which matched `import ` with a trailing space. It slid
+out of the sorted block: exactly the failure the multi-line scanner exists to
+prevent.
+
+And three user errors still arrived as stack traces, in a tool whose stated
+design is that each of them is a sentence: a misspelled flag, a `pubspec.yaml`
+with no `name:`, and — one release after "a config that says when it failed" —
+a config file that does not parse at all.
+
+### Bug fixes
+
+* `--flat` writes a blank line at each section boundary, so it stops undoing
+  `dart format` 3.13+ (issue #1, in flat mode)
+* turning `--attach-comments` off no longer duplicates the group header and
+  orphans the note under it, and the state it used to leave behind is no longer
+  read as already sorted
+* a directive whose keyword ends the line is sorted like any other
+* a misspelled flag is one error line and exit 1, not an `ArgParserException`
+  with eight frames of `package:args` under it
+* a `pubspec.yaml` that does not parse, or that declares no `name:`, is an
+  error naming the problem instead of a `YamlException` or a bare `TypeError`
+* a `tidy_imports.yaml` that does not parse is a configuration issue like any
+  other — reported with its line and column, then run past on the defaults
+* a `pubspec.lock` in an unexpected shape costs plugin-registrant skipping, not
+  the run
+
+### Features
+
+* `declaresMain`, `standardDirectories` and `reportDirectories` are exported
+  from the package barrel, where every other public symbol already was
+
+### Docs
+
+* README: a contents map, an exit-code table, a section on `--attach-comments`
+  — the one option with no prose anywhere — and a "Using it as a library"
+  section covering the whole public surface
+* README: the `--flat` section no longer claims exports move without
+  `--sort-exports`, and says where the blank lines now go
+* `tool/check_version_sync.dart` also checks the two version numbers the README
+  tells people to copy, which had drifted to `^1.5.0` and `v1.1.0`
+
 ## 2.4.0 (2026-09-18)
 
 A configuration could fail without saying anything.

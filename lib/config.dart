@@ -196,12 +196,26 @@ class TidyConfig {
 
   /// Loads configuration, preferring `tidy_imports.yaml` over the
   /// `tidy_imports:` block in `pubspec.yaml`.
+  ///
+  /// A standalone file that does not parse — or cannot be read — is an issue
+  /// like any other, not an exception. Everything else about a broken config
+  /// is reported as a sentence and then survived; the one shape that threw
+  /// instead was the loudest of them, a five-line YAML stack trace for a
+  /// missing colon.
   factory TidyConfig.load(String currentPath, YamlMap pubspecYaml) {
     final standaloneFile = File('$currentPath/tidy_imports.yaml');
     if (standaloneFile.existsSync()) {
-      return TidyConfig.fromStandalone(
-        loadYaml(standaloneFile.readAsStringSync()),
-      );
+      final dynamic parsed;
+      try {
+        parsed = loadYaml(standaloneFile.readAsStringSync());
+      } on Object catch (error) {
+        return TidyConfig.fromYaml(null, [
+          'tidy_imports.yaml '
+              '${error is FileSystemException ? 'could not be read' : 'is not valid YAML'}'
+              ' — ${_briefly(error)}. Using the defaults.',
+        ]);
+      }
+      return TidyConfig.fromStandalone(parsed);
     }
     return TidyConfig.fromYaml(pubspecYaml['tidy_imports']);
   }
@@ -312,6 +326,19 @@ class TidyConfig {
       issues: issues,
     );
   }
+}
+
+/// [error] as one line.
+///
+/// `YamlException.toString()` opens with the line and column and then draws
+/// the offending snippet over four more lines, which is a lot of shape for
+/// something printed as a single sentence — but the position is the useful
+/// half, so the first line is kept whole rather than reduced to `.message`.
+String _briefly(Object error) {
+  if (error is FileSystemException) {
+    return error.osError?.message ?? error.message;
+  }
+  return '$error'.split('\n').first.replaceFirst(RegExp('^Error on '), '');
 }
 
 /// Reads [key] as a [T], recording an issue instead of throwing when the value

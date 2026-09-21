@@ -22,14 +22,126 @@ Spiritual successor to [import_sorter](https://github.com/fluttercommunity/impor
 rebuilt for Dart 3+ with bug fixes, new flags, custom import tiers, `pubspec.yaml`
 sorting, and monorepo support.
 
+## Why use tidy_imports?
+
+### The short answer, for anyone
+
+Every Dart file opens with a list of `import` lines — the file saying which
+other files it needs in order to work. Nothing in Dart decides what order that
+list goes in, so it ends up in the order things happened to be typed, which is
+no order at all.
+
+Think of it as the shelf of tools at the top of the file. Left alone, a shelf
+becomes a drawer: everything is in there, nothing is findable, and everyone who
+opens it puts things back somewhere new.
+
+That costs real time, in three places:
+
+- **Reading.** "Does this screen talk to the network?" is one glance at a
+  grouped list, and a hunt through thirty lines in a jumbled one.
+- **Reviewing.** When two people add an import to the same file, Git cannot
+  tell that the two lines have nothing to do with each other — it reports a
+  conflict, and somebody stops work to resolve a list whose order nobody cared
+  about.
+- **Arguing.** With no rule, the order is a matter of taste. Taste gets
+  re-negotiated once per pull request, forever.
+
+`tidy_imports` picks the rule and applies it identically on every machine, so
+the list stops being anybody's decision. One command, from your project root:
+
+```sh
+dart run tidy_imports
+```
+
+By default it only ever **reorders** lines and adds the little `// Dart
+imports:` labels. It does not delete anything, does not rewrite your code, and
+does not touch a single line below the imports — and the options that *do*
+remove lines (unused imports, duplicates) stay switched off until you ask for
+them by name, and report what they did when they run.
+
+### The technical answer
+
+The Dart toolchain leaves this exact gap, and this is the piece that fills it:
+
+| | What ships with Dart | What `tidy_imports` adds |
+|---|---|---|
+| `dart format` | Whitespace and line breaks. Since 3.13 it separates the `package:` and relative import *sections* — but it never reorders a directive | Orders them, and [agrees with the formatter's blank lines](#matching-dart-format-dart-313) by default instead of fighting them |
+| `directives_ordering` lint | *Reports* a directive in the wrong place | Fixes it: [`--flat`](#matching-darts-own-lints) emits exactly the shape the lint asks for |
+| `prefer_relative_imports` lint | Reports a `package:` URI that could be relative | Rewrites it, with [`--relative-imports`](#matching-darts-own-lints) |
+| `dart fix --code=unused_import` | Removes an import nothing uses | Runs it for you under [`--remove-unused`](#removing-duplicate-and-unused-imports), then tidies the gaps it leaves in the same pass |
+| — | Nothing groups, labels or reports | Group comments, [custom tiers](#custom-import-tiers) for internal packages, [`pubspec.yaml` sorting](#sorting-pubspecyaml), [duplicate folding](#removing-duplicate-and-unused-imports), and the [`--report`](#reading-your-import-graph) import graph |
+
+It earns its place in `dev_dependencies` when:
+
+- **you want the order enforced, not suggested.** `--exit-if-changed` checks
+  the whole project in one pass and names *every* unsorted file, so one CI run
+  shows the complete list instead of aborting on the first offender.
+- **the codebase is big enough that grouping carries information.**
+  `--group-by-folder-depth=1` turns a file's 25 project imports into four
+  labelled groups that match the architecture, instead of a dozen groups of two
+  lines each.
+- **you have internal packages.** A custom tier separates `package:acme_*`
+  from third-party pub packages — a distinction the built-in taxonomy cannot
+  make, because to Dart they are all simply packages.
+- **the sort has to be safe on real files.** A `show` clause `dart format`
+  wrapped over two lines, a conditional `if (dart.library.io)` import, an
+  `// ignore:` pragma that has to stay glued to its directive, a trailing
+  comment, an import commented out inside a nested `/* */`, a directive inside
+  a string literal in a code generator: every one of those broke a line-based
+  sorter, and every one has a test here.
+- **you want to know what the imports say about the project.**
+  [`--report`](#reading-your-import-graph) reads those very same directives as
+  a graph and names the import cycles and the files no entry point reaches.
+
+And when it is **not** worth it: a one-file script, or a team already content
+with `directives_ordering` warnings and fixing them by hand.
+
+## Contents
+
+**Start here** · [Why use it](#why-use-tidy_imports)
+· [How it works](#how-it-works) · [Installation](#installation)
+· [Usage](#usage) · [What is on by default](#what-is-on-by-default)
+· [Options](#options) · [Configuration](#configuration)
+· [Exit codes](#exit-codes)
+
+**Sorting more than imports** · [pubspec.yaml](#sorting-pubspecyaml)
+· [exports](#sorting-exports)
+· [duplicates and unused imports](#removing-duplicate-and-unused-imports)
+
+**Shaping the output** · [custom tiers](#custom-import-tiers)
+· [by folder](#grouping-project-imports-by-folder)
+· [folder depth](#limiting-the-folder-grouping-depth)
+· [test doubles](#grouping-test-doubles)
+· [a note that belongs to an import](#keeping-a-note-with-its-import)
+
+**Agreeing with the toolchain** · [dart format](#matching-dart-format-dart-313)
+· [`directives_ordering` and `prefer_relative_imports`](#matching-darts-own-lints)
+· [multi-line and commented imports](#multi-line-and-commented-imports)
+
+**Beyond sorting** · [reading your import graph](#reading-your-import-graph)
+· [CI integration](#ci-integration)
+· [using it as a library](#using-it-as-a-library)
+· [monorepos](#monorepo--pub-workspace-support)
+
 ## How it works
 
-Imports are grouped in this order and sorted alphabetically within each group:
+Every directive is read, classified by **where it comes from**, sorted
+alphabetically inside its group, and written back under a label. The
+classification reads the import URI — not the raw text of the line — so a
+comment that happens to mention `dart:` cannot drag a package import into the
+wrong group.
+
+The groups, in the order they are written:
 
 1. **Dart imports** (`dart:`)
 2. **Flutter imports** (`package:flutter/`)
 3. **Package imports** (`package:`)
 4. **Project imports** (relative or `package:<your_package>/`)
+
+Two more groups sit in that order once you ask for them:
+[custom tiers](#custom-import-tiers) between 3 and 4, and the
+[test-double group](#grouping-test-doubles) after 4. `--flat` replaces the
+whole taxonomy with [one run per section](#matching-darts-own-lints).
 
 ### Before
 
@@ -79,7 +191,7 @@ the right section, at the current version:
 
 ```yaml
 dev_dependencies:
-  tidy_imports: ^1.5.0
+  tidy_imports: ^2.5.0
 ```
 
 Then, from the project root:
@@ -141,6 +253,11 @@ sorted.
 Almost nothing. `tidy_imports` sorts and groups your imports and changes
 nothing else about the file unless you ask it to — no deleting, no rewriting,
 no touching `pubspec.yaml`.
+
+The reason for that is narrow: a tool that removes a line you did not ask it to
+remove is a tool you stop running, and a tool you stop running sorts nothing at
+all. So the destructive options are opt-in — and the layout options are opt-in
+too, because a project's existing layout is a decision somebody already made.
 
 | On by default | Why |
 |---|---|
@@ -296,6 +413,14 @@ Warning: unknown option `sort_export` in the tidy_imports configuration. Did
 you mean `sort_exports`? It is being ignored.
 Warning: option `emojis` expects a boolean (true or false), but the value is a
 String. Using the default.
+```
+
+A file that does not parse **at all** is reported the same way, rather than as
+the YAML parser's own stack trace:
+
+```
+Warning: tidy_imports.yaml is not valid YAML — line 2, column 13: Mapping
+values are not allowed here. Did you miss a colon earlier? Using the defaults.
 ```
 
 Every one of these keeps the run going. Pass **`--strict-config`** to exit 1 on
@@ -503,10 +628,19 @@ import 'package:args/args.dart';
 //  ← Sort directive sections alphabetically
 ```
 
-With `--flat` the Flutter group stops being special, the headers go away — a
-comment between two runs the lint reads as one section would be a lie about the
-structure — and `export` directives get their own block below the imports,
-which is also what the lint asks for.
+With `--flat` the Flutter group stops being special and the headers go away —
+a comment between two runs the lint reads as one section would be a lie about
+the structure.
+
+A blank line is written wherever the section changes, which is exactly where
+`dart format` 3.13+ writes one, so the two tools agree instead of undoing each
+other on every run. `--no-blank-lines` gives you the tight run back: the lint
+reads order, not spacing.
+
+`export` directives are only moved when you ask for them. The lint wants them
+in a block of their own below the imports, which is what
+**`--flat --sort-exports`** produces; on its own, `--flat` leaves every
+`export` exactly where it is.
 
 Grouping options (`--group-by-folder`, `--test-imports`, custom tiers) are
 ignored under `--flat`: there are no groups left for them to shape.
@@ -681,6 +815,11 @@ The option is a no-op when blank lines are disabled (`--no-blank-lines` /
 `blank_lines: false`), and it never doubles up with `--group-by-folder`, which
 already breaks at that boundary. It applies to the `--test-imports` group too.
 
+[`--flat`](#matching-darts-own-lints) reaches the same agreement by a different
+route: it has no Project group to split, so it writes a blank line wherever the
+section changes — `dart:` to `package:` to relative — which is every boundary
+the formatter cares about.
+
 ## Grouping test doubles
 
 Pass `--test-imports` (or set `test_imports: true`) to pull fakes and mocks out
@@ -751,6 +890,38 @@ line such as `import 'package:http/http.dart'; // uses dart:io underneath` used
 to be filed under **Dart imports** because of the word in the comment; it now
 goes to **Package imports**, where it belongs.
 
+### Keeping a note with its import
+
+`// ignore:` travels with its import whether you ask or not — leaving it behind
+switches the lint suppression off, which is a change in meaning, not in layout.
+A **plain** note above an import is a different question, and the answer is
+`--attach-comments` (or `attach_comments: true`):
+
+```dart
+// before                                 // with --attach-comments
+import 'package:http/http.dart';          // Package imports:
+                                          // the only client that retries
+// the only client that retries           import 'package:http/http.dart';
+import 'package:dio/dio.dart';
+                                          // Project imports:
+import 'package:myapp/app.dart';          import 'package:myapp/app.dart';
+```
+
+Without it the note is not part of the directive, so rebuilding the block
+leaves it below the sorted imports, where it now explains whatever follows it.
+
+Three comments are never attached, in either mode:
+
+| Comment | Where it stays | Why |
+|---|---|---|
+| The note above the **first** directive | On top | It is the file's own header — a licence, an authorship note |
+| `// ignore_for_file:` | On top | It applies to the whole file, not to one directive |
+| `///` doc comments | Where they are | A doc comment documents a declaration, never a directive |
+
+It is **off by default** because it moves comments that are already in your
+files, and a project that has learned to write around the old behaviour should
+not have its diff rewritten by an upgrade.
+
 ### What is left alone
 
 The other half of the promise: text that only *looks* like a directive is never
@@ -770,6 +941,47 @@ import 'package:app/generated.dart';   // stays in the template
 The sorter tracks quotes and `/* */` blocks — which nest in Dart — line by line,
 so only a line that *begins* in executable code can be a directive at all.
 
+## Using it as a library
+
+Everything the CLI does to the *text* of a file is a pure function you can
+call. `bin/tidy_imports.dart` owns all of the filesystem access, argument
+parsing and console output; `lib/` reads nothing, writes nothing and never
+calls `exit()` — it throws, or it returns data. That is what makes it usable
+from your own script:
+
+```dart
+import 'package:tidy_imports/tidy_imports.dart';
+
+void main() {
+  final result = sortImports(
+    source.split('\n'),
+    'my_app', // your package name — what the Project group is decided from
+    false, // emojis
+    false, // deprecated and inert; removed in 3.0.0
+    false, // noComments
+    separateRelativeImports: true,
+  );
+
+  if (result.updated) print(result.sortedFile);
+}
+```
+
+| Symbol | What it is |
+|---|---|
+| `sortImports(lines, packageName, emojis, _, noComments, {…})` | The sorter. Returns `ImportSortData(sortedFile, updated, duplicatesRemoved:)` |
+| `sortPubspec(String)` | The dependency sort, string in and string out |
+| `TidyConfig.load(root, pubspecYaml)`, `.fromYaml(node)`, `.fromStandalone(node)` | The config reader. `TidyConfig.issues` is what was wrong with it, as finished sentences |
+| `CustomTier(name, pattern)` | One custom group |
+| `directiveUris(lines)` | Every `import`, `export` and `part` URI — skipping anything inside a string or a `/* */` block |
+| `declaresMain(lines)` | Whether the file declares a top-level `main()` |
+| `ImportGraph.build(directivesByFile, packageName, {packages})` | The graph behind `--report`: `cycles()`, `cycleWalk()`, `unreachable()`, `unreferenced()` |
+| `resolveUri(uri, from:, packageName:, packages:)` | One URI to a project-relative path, or `null` when it points outside |
+| `dartFiles(root, patterns, {extraDirectories})` | File discovery. Throws `FormatException` on a bad pattern |
+| `compilePatterns(patterns, label)`, `toPosix(path)`, `standardDirectories`, `reportDirectories` | The pattern, path and directory helpers the CLI itself uses |
+
+[`example/example.dart`](example/example.dart) runs one demonstration per
+option and is the fastest way to see the shapes `sortImports` takes.
+
 ## CI Integration
 
 ### GitHub Actions
@@ -784,13 +996,27 @@ file that needs sorting before exiting with code `1` — so a single CI run show
 you everything to fix, not just the first offender. It never writes files. Use
 `--dry-run` locally for the same read-only preview with a friendlier summary.
 
+### Exit codes
+
+| Code | When |
+|---|---|
+| `0` | Nothing to report. Files were sorted, or — in a read-only mode — none needed it |
+| `1` | Something you asked to hear about: a file needs sorting under `--exit-if-changed`, a finding under `--report --exit-if-changed`, a configuration problem under `--strict-config`, a file that could not be read, an invalid pattern or flag, or a missing / nameless `pubspec.yaml` |
+
+Under `--remove-unused` a failing `dart fix` exits with whatever code `dart fix`
+returned, so a broken analysis stays distinguishable from an unsorted file.
+
+Every user error is one line on stderr — never a stack trace. If you ever see
+one, that is a bug worth
+[reporting](https://github.com/Franklyn-R-Silva/tidy_imports/issues).
+
 ### pre-commit hook
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v1.1.0' # use the latest release tag
+    rev: 'v2.5.0' # use the latest release tag
     hooks:
       - id: dart-import-sorter      # for plain Dart projects
       # - id: flutter-import-sorter # for Flutter projects
@@ -828,6 +1054,9 @@ The `packages/` directory is included to support pub workspaces and monorepos.
 | `directives_ordering` lint | Requested in #58 / #28, still open | `--flat` |
 | Rewrite own imports as relative | Requested in #59, still open | `--relative-imports` |
 | Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
+| Misspelled flag | Unhandled `FormatException` | Readable error, exit 1 |
+| Broken `pubspec.yaml` / no `name:` | Unhandled `TypeError` | Readable error, exit 1 |
+| Broken config file | Not read at all | Reported as a sentence; `--strict-config` makes it fatal |
 | Group comments inside string literals | Silently deleted | Preserved |
 | Multi-line imports (wrapped `show`/`as`) | Dropped out of the sorted block | Sorted like any other import |
 | Trailing comment on an import | Ejected the import from the block | Sorted, comment kept on the line |
