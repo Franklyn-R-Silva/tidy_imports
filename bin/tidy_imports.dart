@@ -10,6 +10,8 @@ import 'package:yaml/yaml.dart';
 // Project imports:
 import 'package:tidy_imports/args.dart' as local_args;
 import 'package:tidy_imports/config.dart';
+import 'package:tidy_imports/config_edit.dart';
+import 'package:tidy_imports/doctor.dart';
 import 'package:tidy_imports/files.dart' as files;
 import 'package:tidy_imports/graph.dart';
 import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
@@ -45,7 +47,9 @@ void main(List<String> args) {
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
     ..addFlag('dry-run', negatable: false)
-    ..addFlag('report', negatable: false);
+    ..addFlag('report', negatable: false)
+    ..addFlag('doctor', negatable: false)
+    ..addFlag('apply', negatable: false);
 
   // A typo in a flag is the same kind of mistake as a typo in a file pattern,
   // and used to be the one that printed a stack trace: `ArgParserException`
@@ -65,6 +69,21 @@ void main(List<String> args) {
 
   if (argResults['version'] == true) {
     local_args.outputVersion();
+  }
+
+  final doctor = argResults['doctor'] == true;
+  if (argResults['apply'] == true && !doctor) {
+    stderr.writeln(
+      'Error: --apply writes what --doctor suggests, so it only works with '
+      '--doctor.',
+    );
+    exit(1);
+  }
+  if (doctor && argResults['report'] == true) {
+    stderr.writeln(
+      'Error: --doctor and --report are separate run modes. Pass one of them.',
+    );
+    exit(1);
   }
 
   final currentPath = Directory.current.path;
@@ -151,6 +170,19 @@ void main(List<String> args) {
       );
       exit(1);
     }
+  }
+
+  // `--doctor` judges the configuration — what every future run reads — so it
+  // runs before any flag is resolved against it, and touches no Dart file.
+  if (doctor) {
+    final exitOnChange = argResults['exit-if-changed'] == true;
+    exit(_doctor(
+      currentPath,
+      config,
+      apply: argResults['apply'] == true,
+      readOnly: exitOnChange || argResults['dry-run'] == true,
+      failOnFindings: exitOnChange,
+    ));
   }
 
   // A flag the user actually typed wins; otherwise the config decides. This
@@ -678,4 +710,265 @@ Map<String, String> _subPackages(String currentPath) {
     }
   }
   return found;
+}
+
+/// Says whether the configuration agrees with the lints in force, and with
+/// `dart format`, and — under [apply] — writes the keys that make it agree.
+///
+/// Returns the exit code: 1 under [failOnFindings] while a conflict or a fight
+/// is left standing, 0 otherwise.
+///
+/// Every flag in this tool used to be something the user had to know to look
+/// for: `--flat` exists because of `directives_ordering`, and nothing said so
+/// to someone who had that lint on. This reads `analysis_options.yaml` — the
+/// nearest one, as the analyzer does, following its `include:` chain — and
+/// says it.
+int _doctor(
+  String currentPath,
+  TidyConfig config, {
+  required bool apply,
+  required bool readOnly,
+  required bool failOnFindings,
+}) {
+  final options = _findUp(currentPath, 'analysis_options.yaml');
+  final packageDirs = _packageDirs(currentPath);
+  final lints = options == null
+      ? const LintState({})
+      : readLints(
+          files.toPosix(options.path),
+          read: (path) {
+            try {
+              final file = File(path);
+              return file.existsSync() ? file.readAsStringSync() : null;
+            } on FileSystemException {
+              return null;
+            }
+          },
+          packageDir: (name) => packageDirs[name],
+        );
+
+  final findings = diagnose(
+    lints,
+    config,
+    formatterSeparates: _formatterSeparates(Platform.version),
+  );
+
+  final shown = options == null
+      ? 'analysis_options.yaml'
+      : files
+          .toPosix(options.path.replaceFirst(currentPath, ''))
+          .replaceFirst(RegExp('^/'), '');
+  stdout.writeln('┏━━ Checking the tidy_imports configuration against $shown');
+
+  if (options == null) {
+    stdout.writeln('┃  • No analysis_options.yaml here or above — no lint to '
+        'agree with');
+  } else {
+    final inForce = importLints.where(lints.has).toList();
+    stdout.writeln(inForce.isEmpty
+        ? '┃  ${'✔'.green()} None of ${importLints.join(', ')} is on'
+        : '┃  Lints that read imports: ${inForce.join(', ')}');
+  }
+  for (final problem in lints.problems) {
+    _say('${'!'.yellow()} $problem');
+  }
+
+  for (final finding in findings) {
+    final mark = switch (finding.kind) {
+      FindingKind.conflict || FindingKind.fight => '✖'.red(),
+      FindingKind.suggestion => '!'.yellow(),
+      FindingKind.note => '•',
+    };
+    _say('$mark ${finding.message}');
+    if (finding.fix.isNotEmpty) {
+      stdout.writeln('┃      → ${_describe(finding.fix)}');
+    }
+  }
+
+  int count(FindingKind kind) => findings.where((f) => f.kind == kind).length;
+  final conflicts = count(FindingKind.conflict);
+  final fights = count(FindingKind.fight);
+  final suggestions = count(FindingKind.suggestion);
+  final tally = [
+    if (conflicts > 0) _plural(conflicts, 'conflict'),
+    if (fights > 0) _plural(fights, 'fight'),
+    if (suggestions > 0) _plural(suggestions, 'suggestion'),
+  ];
+  stdout.writeln(tally.isEmpty
+      ? '┗━━ ${'✔'.green()} Nothing to change'
+      : '┗━━ ${conflicts + fights > 0 ? '✖'.red() : '!'.yellow()} '
+          '${tally.join(', ')}');
+
+  final fixes = fixesOf(findings);
+  var fixed = false;
+  if (fixes.isNotEmpty) {
+    final standaloneFile = File('$currentPath/tidy_imports.yaml');
+    final standalone = standaloneFile.existsSync();
+    final target =
+        standalone ? standaloneFile : File('$currentPath/pubspec.yaml');
+    final name = standalone ? 'tidy_imports.yaml' : 'pubspec.yaml';
+
+    if (apply) {
+      fixed = _applyFixes(target, name, fixes,
+          standalone: standalone, readOnly: readOnly);
+    } else {
+      final where = standalone ? name : 'the tidy_imports: block of $name';
+      stdout.writeln('\nAdd to $where — or run again with --apply:\n');
+      stdout.writeln(_snippet(fixes, wrapped: !standalone));
+    }
+  }
+
+  final standing = conflicts + (fixed ? 0 : fights);
+  if (failOnFindings && standing > 0) {
+    stderr.writeln('\n🚨 ${_plural(standing, 'problem')} between the '
+        'configuration and the toolchain. Failing because --exit-if-changed '
+        'was passed.');
+    return 1;
+  }
+  return 0;
+}
+
+/// Writes [fixes] into [target], or says why it did not. Returns whether the
+/// file now says what [fixes] says.
+///
+/// The edit is checked before it is written: the new text is parsed back and
+/// every key must read as the value that was meant. A line editor that
+/// guessed wrong on a hand-written file must cost a snippet, never a pubspec.
+bool _applyFixes(
+  File target,
+  String name,
+  Map<String, Object> fixes, {
+  required bool standalone,
+  required bool readOnly,
+}) {
+  final String original;
+  try {
+    original = target.readAsStringSync();
+  } on FileSystemException catch (e) {
+    stderr.writeln('Error: could not read $name: '
+        '${e.osError?.message ?? e.message}');
+    return false;
+  }
+
+  final edited = setConfigKeys(original, fixes, standalone: standalone);
+  if (edited == null || !_says(edited, fixes, standalone: standalone)) {
+    stdout.writeln('\n${'!'.yellow()} $name is laid out in a way --apply '
+        'will not edit by guesswork. Add this by hand:\n');
+    stdout.writeln(_snippet(fixes, wrapped: !standalone));
+    return false;
+  }
+
+  if (readOnly) {
+    stdout.writeln('\n• Would write ${_describe(fixes)} to $name '
+        '(read-only run — nothing written)');
+    return false;
+  }
+  target.writeAsStringSync(edited);
+  stdout.writeln('\n${'✔'.green()} Wrote ${_describe(fixes)} to $name');
+  return true;
+}
+
+/// Whether [text] parses and its tidy_imports options include every entry of
+/// [fixes].
+bool _says(String text, Map<String, Object> fixes, {required bool standalone}) {
+  try {
+    final document = loadYaml(text);
+    if (document is! YamlMap) return false;
+    final wrapped = document['tidy_imports'];
+    final block = standalone && !(document.length == 1 && wrapped is YamlMap)
+        ? document
+        : wrapped;
+    return block is YamlMap &&
+        fixes.entries.every((entry) => block[entry.key] == entry.value);
+  } on Object {
+    return false;
+  }
+}
+
+/// `flat: true, sort_exports: true`.
+String _describe(Map<String, Object> fixes) =>
+    fixes.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+
+/// [fixes] as YAML to paste.
+String _snippet(Map<String, Object> fixes, {required bool wrapped}) => [
+      if (wrapped) 'tidy_imports:',
+      for (final entry in fixes.entries)
+        '${wrapped ? '  ' : ''}${entry.key}: ${entry.value}',
+    ].join('\n');
+
+String _plural(int count, String noun) =>
+    '$count $noun${count == 1 ? '' : 's'}';
+
+/// Prints [text] under the report's left rule, wrapped so a sentence stays
+/// readable in an 80-column terminal.
+void _say(String text) {
+  const width = 72;
+  var line = '';
+  var first = true;
+  for (final word in text.split(' ')) {
+    if (line.isNotEmpty && line.length + 1 + word.length > width) {
+      stdout.writeln('┃  ${first ? '' : '  '}$line');
+      first = false;
+      line = word;
+    } else {
+      line = line.isEmpty ? word : '$line $word';
+    }
+  }
+  if (line.isNotEmpty) stdout.writeln('┃  ${first ? '' : '  '}$line');
+}
+
+/// Whether the `dart format` of the SDK [version] (`3.13.1 (stable) …`)
+/// writes a blank line between `package:` and relative imports on its own.
+bool _formatterSeparates(String version) {
+  final match = RegExp(r'^(\d+)\.(\d+)').firstMatch(version);
+  if (match == null) return false;
+  final major = int.parse(match.group(1)!);
+  final minor = int.parse(match.group(2)!);
+  return major > 3 || (major == 3 && minor >= 13);
+}
+
+/// The nearest [relative] file at [start] or above it, the way the analyzer
+/// finds `analysis_options.yaml` and pub finds a workspace's package config.
+File? _findUp(String start, String relative) {
+  var dir = Directory(start).absolute;
+  while (true) {
+    final file = File('${dir.path}/$relative');
+    if (file.existsSync()) return file;
+    final parent = dir.parent;
+    if (parent.path == dir.path) return null;
+    dir = parent;
+  }
+}
+
+/// Every resolved package, as name -> the directory its `package:` URIs start
+/// in, read from the nearest `.dart_tool/package_config.json`. Empty when
+/// there is none — `dart pub get` has not run — or it does not parse.
+Map<String, String> _packageDirs(String currentPath) {
+  final configFile = _findUp(currentPath, '.dart_tool/package_config.json');
+  if (configFile == null) return const {};
+  try {
+    final json = jsonDecode(configFile.readAsStringSync());
+    final packages = json is Map ? json['packages'] : null;
+    if (packages is! List) return const {};
+
+    final base =
+        Uri.directory(configFile.parent.path, windows: Platform.isWindows);
+    final dirs = <String, String>{};
+    for (final package in packages) {
+      if (package is! Map) continue;
+      final name = package['name'];
+      final root = package['rootUri'];
+      final lib = package['packageUri'];
+      if (name is! String || root is! String) continue;
+      final uri = base
+          .resolve(root.endsWith('/') ? root : '$root/')
+          .resolve(lib is String ? lib : '');
+      dirs[name] = files
+          .toPosix(uri.toFilePath(windows: Platform.isWindows))
+          .replaceFirst(RegExp(r'/$'), '');
+    }
+    return dirs;
+  } on Object {
+    return const {};
+  }
 }

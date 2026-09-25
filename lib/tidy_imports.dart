@@ -19,6 +19,16 @@
 library;
 
 export 'config.dart' show TidyConfig, CustomTier;
+export 'config_edit.dart' show setConfigKeys;
+export 'doctor.dart'
+    show
+        DoctorFinding,
+        FindingKind,
+        LintState,
+        diagnose,
+        fixesOf,
+        importLints,
+        readLints;
 export 'src/version.dart' show packageVersion, packageName;
 export 'graph.dart' show ImportGraph, resolveUri;
 export 'sort.dart'

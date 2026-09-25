@@ -80,6 +80,16 @@ Options
   config file for a single run: --no-emojis, --comments, --no-sort-exports.
 
 Run modes
+      --doctor                   Read analysis_options.yaml — following its
+                                 include: chain — and say whether this
+                                 configuration agrees with the lints that read
+                                 imports (directives_ordering,
+                                 prefer_relative_imports,
+                                 always_use_package_imports) and with
+                                 dart format. Flags two lints that contradict
+                                 each other. Sorts nothing.
+      --apply                    With --doctor: write the keys it suggests
+                                 into tidy_imports.yaml or the pubspec block.
       --report                   Read the project's own import graph and say
                                  what it found: files that import each other,
                                  and files under lib/ no entry point reaches.
@@ -88,7 +98,8 @@ Run modes
                                  what is read.
       --dry-run                  Report what would change; write nothing.
       --exit-if-changed          Exit 1 if anything is unsorted — or, with
-                                 --report, on any finding. For CI.
+                                 --report, on any finding; with --doctor, on
+                                 a conflict or a fight. For CI.
       --ignore-config            Ignore tidy_imports.yaml and the pubspec block.
       --strict-config            Exit 1 on a configuration problem instead of
                                  warning about it. Either way it is reported:
@@ -113,6 +124,8 @@ Examples
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
   dart run tidy_imports --report          # cycles and dead files
+  dart run tidy_imports --doctor          # which options your lints want
+  dart run tidy_imports --doctor --apply  # ...and write them to the config
   dart run tidy_imports --flat            # satisfy directives_ordering
   dart run tidy_imports --remove-unused --remove-duplicates
   dart run tidy_imports --no-emojis

@@ -462,6 +462,134 @@ tidy_imports:
     expect(libFile('a.dart').readAsStringSync(), unsorted);
   });
 
+  group('--doctor', () {
+    void lints(List<String> rules) =>
+        File('${temp.path}/analysis_options.yaml').writeAsStringSync(
+          'linter:\n  rules:\n${rules.map((r) => '    - $r\n').join()}',
+        );
+
+    test('with no lint that reads imports, has nothing to change', () {
+      lints(['avoid_print']);
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Nothing to change'));
+    });
+
+    test('says which flag agrees with directives_ordering', () {
+      lints(['directives_ordering']);
+      libFile('a.dart').writeAsStringSync(unsorted);
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('flat: true'));
+      expect(result.stdout, contains('--apply'));
+      expect(
+        libFile('a.dart').readAsStringSync(),
+        unsorted,
+        reason: '--doctor reads the configuration; it sorts nothing',
+      );
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--apply writes the keys, and a second look finds nothing', () {
+      lints(['directives_ordering', 'always_use_package_imports']);
+
+      final applied = run(['--doctor', '--apply']);
+
+      expect(applied.exitCode, 0, reason: '${applied.stderr}');
+      expect(
+        File('${temp.path}/pubspec.yaml').readAsStringSync(),
+        'name: demo\n\ntidy_imports:\n'
+        '  flat: true\n  sort_exports: true\n  package_imports: true\n',
+      );
+
+      final again = run(['--doctor', '--exit-if-changed']);
+      expect(again.exitCode, 0, reason: '${again.stdout}');
+      expect(again.stdout, contains('Nothing to change'));
+    });
+
+    test('--apply edits a standalone tidy_imports.yaml when there is one', () {
+      lints(['always_use_package_imports']);
+      final standalone = File('${temp.path}/tidy_imports.yaml')
+        ..writeAsStringSync('emojis: true\n');
+
+      expect(run(['--doctor', '--apply']).exitCode, 0);
+
+      expect(
+        standalone.readAsStringSync(),
+        'emojis: true\npackage_imports: true\n',
+      );
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--apply with --dry-run writes nothing', () {
+      lints(['directives_ordering']);
+
+      final result = run(['--doctor', '--apply', '--dry-run']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Would write'));
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--exit-if-changed fails on a fight', () {
+      lints(['directives_ordering']);
+
+      final result = run(['--doctor', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--exit-if-changed'));
+    });
+
+    test('--exit-if-changed passes on a suggestion alone', () {
+      lints(['always_use_package_imports']);
+
+      expect(run(['--doctor', '--exit-if-changed']).exitCode, 0);
+    });
+
+    test('two contradicting lints are a conflict --apply cannot settle', () {
+      lints(['prefer_relative_imports', 'always_use_package_imports']);
+
+      final result = run(['--doctor', '--apply', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, contains('contradict'));
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('an include that does not resolve is reported, not fatal', () {
+      File('${temp.path}/analysis_options.yaml').writeAsStringSync(
+        'include: package:not_resolved/options.yaml\n',
+      );
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('dart pub get'));
+    });
+
+    test('--apply without --doctor is an error', () {
+      final result = run(['--apply']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--doctor'));
+    });
+
+    test('--doctor with --report is an error', () {
+      final result = run(['--doctor', '--report']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('separate run modes'));
+    });
+  });
+
   group('--report', () {
     String out(List<String> args) => run(args).stdout as String;
 
