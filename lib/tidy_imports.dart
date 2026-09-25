@@ -20,6 +20,8 @@ library;
 
 export 'config.dart' show TidyConfig, CustomTier;
 export 'config_edit.dart' show setConfigKeys;
+export 'dependencies.dart'
+    show DependencyAudit, auditDependencies, usedWithoutImport;
 export 'doctor.dart'
     show
         DoctorFinding,
