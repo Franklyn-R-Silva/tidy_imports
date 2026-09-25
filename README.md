@@ -69,7 +69,7 @@ your app imports:
 
 ```yaml
 dev_dependencies:
-  tidy_imports: ^2.5.0
+  tidy_imports: ^2.6.0
 ```
 
 ### Before
@@ -303,7 +303,7 @@ never a stack trace.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v2.5.0'
+    rev: 'v2.6.0'
     hooks:
       - id: dart-import-sorter      # or flutter-import-sorter
 ```

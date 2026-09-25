@@ -1,3 +1,72 @@
+## 2.6.0 (2026-09-25)
+
+The tool stops waiting to be told.
+
+Every option that agrees with a lint was something you had to know to look
+for: `--flat` exists because of `directives_ordering`, and nothing said so to
+someone who had that lint switched on. `--doctor` reads `analysis_options.yaml`
+— the nearest one, following its `include:` chain — and says which options the
+lints in force want, which settings fight them, and when two of them contradict
+each other. `--doctor --apply` writes the answer into the config.
+
+The same directives it already read on every run now answer two more
+questions. `--report` draws the import graph as Mermaid — which GitHub renders
+in a README or a pull request — as Graphviz DOT, or as JSON, and adds the most
+imported files, the files that import the most, and how the features of `lib/`
+couple. And it checks the imports against `pubspec.yaml`: a dependency nothing
+imports, and a dev dependency that `lib/` quietly ships to everyone who depends
+on the package.
+
+And two ways to write outside the lines. The file walk followed links, so in a
+monorepo with a Flutter app under `packages/` the sorter went through
+`.plugin_symlinks/` into the pub cache and rewrote plugin sources that belong
+to no project. And `--relative-imports` replaced only the first URI on the
+first line: an import whose URI sat on the next line kept its `package:` text
+but was filed as relative.
+
+### Features
+
+* `--doctor`: checks the configuration against `directives_ordering`,
+  `prefer_relative_imports`, `always_use_package_imports` and `dart format`
+  3.13+, and names the file each rule came from. Conflicts, fights and
+  suggestions; `--apply` writes the fixes into `tidy_imports.yaml` or the
+  pubspec block, keeping comments and CRLF, and parses the result back before
+  writing. `--doctor --exit-if-changed` fails on a conflict or a fight
+* `--package-imports` (`package_imports`): the opposite of
+  `--relative-imports`, for `always_use_package_imports`. The two are never
+  applied together — a config asking for both gets neither, with a warning
+* `--report --format=mermaid|dot|json`: the import graph for a README, a pull
+  request, Graphviz or your own tooling. Features are boxed, cycles red, dead
+  files dashed; only the artifact goes to stdout. JSON carries a
+  `schemaVersion`
+* `--report` metrics: most imported files, files that import the most, and
+  per-feature coupling — imports in and out, and instability — with the
+  heaviest pairs. `feature_depth` / `--feature-depth` sets what a feature is
+* `--report` checks imports against `pubspec.yaml`: dependencies nothing
+  imports, and packages imported from `lib/` or `bin/` that are only dev
+  dependencies. `ignored_dependencies` keeps a font, a generator or a plugin
+  out of it
+
+### Bug fixes
+
+* the file walk no longer follows links, and skips hidden directories and a
+  package's `build/` — it used to rewrite plugin sources in the pub cache
+  through a Flutter app's `.plugin_symlinks/`
+* `--relative-imports` rewrites every URI of a directive: one on the line after
+  the keyword, and every target of a conditional import
+* `lcov.info` is no longer published in the package
+
+### Behaviour change
+
+* `--report --exit-if-changed` can now fail on a dependency finding. List a
+  dependency used without an import under `ignored_dependencies`
+
+### Docs
+
+* README rebuilt as a landing page, with the demo GIF on top; the full
+  reference moved to `docs/`
+* pub.dev shows screenshots, and links the documentation
+
 ## 2.5.0 (2026-09-21)
 
 Four ways to lose work, all of them quiet.
