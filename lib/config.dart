@@ -30,6 +30,7 @@ const _knownKeys = {
   'remove_unused',
   'flat',
   'relative_imports',
+  'package_imports',
   'attach_comments',
 };
 
@@ -155,6 +156,12 @@ class TidyConfig {
   /// choice has to be the user's.
   final bool relativeImports;
 
+  /// Whether relative imports under `lib/` are rewritten as
+  /// `package:<self>/…`, matching the `always_use_package_imports` lint — the
+  /// opposite of [relativeImports]. Opt-in; the two are never both on, and a
+  /// config asking for both gets neither, with an issue saying why.
+  final bool packageImports;
+
   /// How many folder segments — counted after the package root — the project
   /// group is broken up by. 0 keeps the whole path, which is the original
   /// behaviour of [groupProjectByFolder]. Any value above 0 also switches
@@ -189,6 +196,7 @@ class TidyConfig {
     this.removeUnused = false,
     this.flat = false,
     this.relativeImports = false,
+    this.packageImports = false,
     this.reportRoots = const [],
     this.attachComments = false,
     this.issues = const [],
@@ -300,6 +308,20 @@ class TidyConfig {
     final blankLines = _readBool(config, 'blank_lines', issues);
     final testPrefixes = _readStrings(config, 'test_import_prefixes', issues);
 
+    // Each one undoes the other on every run, so honouring both is honouring
+    // neither — and picking one would be guessing which the user meant.
+    var relativeImports =
+        _readBool(config, 'relative_imports', issues) ?? false;
+    var packageImports = _readBool(config, 'package_imports', issues) ?? false;
+    if (relativeImports && packageImports) {
+      issues.add(
+        '`relative_imports` and `package_imports` are both on, and they '
+        'rewrite in opposite directions. Neither is applied — keep the one '
+        'your lints ask for (`dart run tidy_imports --doctor` says which).',
+      );
+      relativeImports = packageImports = false;
+    }
+
     return TidyConfig(
       emojis: _readBool(config, 'emojis', issues) ?? false,
       noComments: comments == null ? false : !comments,
@@ -318,7 +340,8 @@ class TidyConfig {
       removeDuplicates: _readBool(config, 'remove_duplicates', issues) ?? false,
       removeUnused: _readBool(config, 'remove_unused', issues) ?? false,
       flat: _readBool(config, 'flat', issues) ?? false,
-      relativeImports: _readBool(config, 'relative_imports', issues) ?? false,
+      relativeImports: relativeImports,
+      packageImports: packageImports,
       attachComments: _readBool(config, 'attach_comments', issues) ?? false,
       reportRoots: _readStrings(config, 'report_roots', issues),
       groupProjectByFolderDepth:

@@ -422,6 +422,46 @@ void main() {}
     );
   });
 
+  test('--package-imports rewrites relative uris under lib/', () {
+    Directory('${temp.path}/lib/src/p2').createSync(recursive: true);
+    final file = File('${temp.path}/lib/src/p2/bar.dart')
+      ..writeAsStringSync("import '../foo.dart';\n\nvoid main() {}\n");
+
+    expect(run(['--package-imports', '--no-comments']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      "import 'package:demo/src/foo.dart';\n\nvoid main() {}\n",
+    );
+  });
+
+  test('package_imports from the config is overridden by --relative-imports',
+      () {
+    File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  package_imports: true
+''');
+    final file = libFile('a.dart')
+      ..writeAsStringSync(
+        "import 'package:demo/src/b.dart';\n\nvoid main() {}\n",
+      );
+
+    final result = run(['--relative-imports', '--no-comments']);
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(file.readAsStringSync(), startsWith("import 'src/b.dart';"));
+  });
+
+  test('--relative-imports with --package-imports is an error', () {
+    libFile('a.dart').writeAsStringSync(unsorted);
+
+    final result = run(['--relative-imports', '--package-imports']);
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('opposite directions'));
+    expect(libFile('a.dart').readAsStringSync(), unsorted);
+  });
+
   group('--report', () {
     String out(List<String> args) => run(args).stdout as String;
 

@@ -32,6 +32,7 @@ void main(List<String> args) {
     ..addFlag('remove-duplicates')
     ..addFlag('flat')
     ..addFlag('relative-imports')
+    ..addFlag('package-imports')
     ..addFlag('attach-comments')
     ..addFlag('remove-unused')
     ..addFlag('group-by-folder')
@@ -169,7 +170,26 @@ void main(List<String> args) {
       resolve('remove-duplicates', config.removeDuplicates);
   final removeUnused = resolve('remove-unused', config.removeUnused);
   final flat = resolve('flat', config.flat);
-  final relativeImports = resolve('relative-imports', config.relativeImports);
+  var relativeImports = resolve('relative-imports', config.relativeImports);
+  var packageImports = resolve('package-imports', config.packageImports);
+
+  // The two rewrite in opposite directions. A config asking for both already
+  // got neither (and an issue saying so), so a clash here involves a flag: one
+  // typed flag simply wins over the config for this run, two are a mistake.
+  if (relativeImports && packageImports) {
+    final typedRelative = argResults.wasParsed('relative-imports');
+    final typedPackage = argResults.wasParsed('package-imports');
+    if (typedRelative && typedPackage) {
+      stderr.writeln(
+        'Error: --relative-imports and --package-imports rewrite in opposite '
+        'directions. Pass one of them.',
+      );
+      exit(1);
+    }
+    if (typedRelative) packageImports = false;
+    if (typedPackage) relativeImports = false;
+  }
+
   final attachComments = resolve('attach-comments', config.attachComments);
   final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
@@ -324,6 +344,7 @@ void main(List<String> args) {
       removeDuplicates: removeDuplicates,
       flat: flat,
       relativeImports: relativeImports,
+      packageImports: packageImports,
       attachComments: attachComments,
       libRelativePath: _libRelativePath(currentPath, filePath),
     );

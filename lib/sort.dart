@@ -49,6 +49,12 @@ const _maxDirectiveLines = 512;
 /// path there is nothing to be relative *to*, so the rewrite is skipped — as
 /// it is for files outside `lib/`, which cannot reach it with a relative URI
 /// at all (import_sorter#59).
+///
+/// [packageImports] is the other direction, for `always_use_package_imports`:
+/// a relative URI that stays inside `lib/` becomes `package:<packageName>/…`.
+/// One that climbs out of `lib/`, is root-relative (`/x.dart`) or carries a
+/// scheme is left as written. The two are opposites, so asking for both is an
+/// [ArgumentError].
 ImportSortData sortImports(
   List<String> lines,
   String packageName,
@@ -77,9 +83,17 @@ ImportSortData sortImports(
   bool removeDuplicates = false,
   bool flat = false,
   bool relativeImports = false,
+  bool packageImports = false,
   String? libRelativePath,
   bool attachComments = false,
 }) {
+  if (relativeImports && packageImports) {
+    throw ArgumentError(
+      'relativeImports and packageImports rewrite in opposite directions; '
+      'pass at most one of them.',
+    );
+  }
+
   // Asking for a folder depth is asking for folder grouping; requiring both
   // options only creates a way to set the depth and see nothing happen.
   final groupByFolder = groupProjectByFolder || groupProjectByFolderDepth > 0;
@@ -179,27 +193,39 @@ ImportSortData sortImports(
     }
   }
 
-  // `package:<self>/…` rewritten as a path relative to this file. Left alone
-  // when the option is off, when the file's own location is unknown, or when
+  // `package:<self>/…` and a path relative to this file name the same library,
+  // and the two lints disagree on which to write: [relativeImports] turns the
+  // first into the second, [packageImports] the second into the first. Left
+  // alone when both are off, when the file's own location is unknown, or when
   // the URI points anywhere else — another package's `package:` URI has no
-  // relative form from here.
+  // relative form from here, and a relative one that leaves `lib/` has no
+  // `package:` form.
   //
   // Every URI of the directive is rewritten, wherever its line breaks. This
   // used to replace the first URI on the first line only: an `import` whose
   // URI sat on the next line kept its text but took the new URI as its sort
   // key, so a `package:` import was filed among the relative ones; and a
   // conditional import came out half-rewritten.
-  _Directive relativize(_Directive directive) {
+  _Directive rewrite(_Directive directive) {
     final from = libRelativePath;
-    if (!relativeImports || from == null) return directive;
+    if (from == null) return directive;
 
     final prefix = 'package:$packageName/';
-    return _rewriteUris(
-      directive,
-      (uri) => uri.startsWith(prefix)
-          ? _relativePath(from, uri.substring(prefix.length))
-          : null,
-    );
+    if (relativeImports) {
+      return _rewriteUris(
+        directive,
+        (uri) => uri.startsWith(prefix)
+            ? _relativePath(from, uri.substring(prefix.length))
+            : null,
+      );
+    }
+    if (packageImports) {
+      return _rewriteUris(directive, (uri) {
+        final path = _resolveInLib(from, uri);
+        return path == null ? null : '$prefix$path';
+      });
+    }
+    return directive;
   }
 
   // Signatures of the directives kept so far, for [removeDuplicates].
@@ -253,7 +279,7 @@ ImportSortData sortImports(
             // Rewrite first: a `package:` URI and its relative form are the
             // same import, and only look like duplicates once both are
             // written the same way.
-            final directive = relativize(
+            final directive = rewrite(
               _Directive(lines.sublist(index, start), body, uri, order++),
             );
             if (removeDuplicates && !seen.add(directive.signature)) {
@@ -668,6 +694,33 @@ String? _relativePath(String from, String to) {
   ];
   return parts.isEmpty ? null : parts.join('/');
 }
+
+/// The path, relative to `lib/`, that the relative [uri] written in [from]
+/// points at — or null when [uri] is not a relative path to a Dart file that
+/// stays inside `lib/`.
+///
+/// A scheme (`dart:`, `package:`, `http:`) or a leading `/` means the URI is
+/// not relative to [from] at all. Only `.dart` targets count: a conditional
+/// import's `== 'true'` value is quoted too, and is not a path.
+String? _resolveInLib(String from, String uri) {
+  if (!uri.endsWith('.dart') || uri.startsWith('/') || _scheme.hasMatch(uri)) {
+    return null;
+  }
+
+  final parts = from.split('/')..removeLast();
+  for (final segment in uri.split('/')) {
+    if (segment == '.' || segment.isEmpty) continue;
+    if (segment == '..') {
+      if (parts.isEmpty) return null;
+      parts.removeLast();
+      continue;
+    }
+    parts.add(segment);
+  }
+  return parts.join('/');
+}
+
+final _scheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*:');
 
 /// [directive] with each of its URIs passed through [rewrite], which returns
 /// the replacement or null to keep the URI as written.

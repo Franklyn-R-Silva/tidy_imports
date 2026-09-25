@@ -658,6 +658,29 @@ import 'dart:io';
       expect(config.removeUnused, isFalse);
       expect(config.flat, isFalse);
       expect(config.relativeImports, isFalse);
+      expect(config.packageImports, isFalse);
+    });
+
+    test('reads package_imports', () {
+      final config = TidyConfig.fromYaml(loadYaml('package_imports: true'));
+
+      expect(config.packageImports, isTrue);
+      expect(config.issues, isEmpty);
+    });
+
+    test('relative_imports and package_imports together apply neither', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('relative_imports: true\npackage_imports: true'),
+      );
+
+      expect(config.relativeImports, isFalse);
+      expect(config.packageImports, isFalse);
+      expect(
+        config.issues.single,
+        allOf(contains('relative_imports'), contains('package_imports')),
+        reason: 'each undoes the other on every run, so the file asked for '
+            'nothing — and saying so beats guessing which one was meant',
+      );
     });
 
     test('separate_relative_imports is the one default that is on', () {
@@ -812,6 +835,7 @@ remove_duplicates: false
 remove_unused: false
 flat: false
 relative_imports: false
+package_imports: false
 attach_comments: false
 '''),
       );

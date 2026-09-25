@@ -58,6 +58,10 @@ Options
                                  relative paths, matching the
                                  `prefer_relative_imports` lint. Only inside
                                  lib/. Off by default.
+      --package-imports          The opposite: rewrite relative imports under
+                                 lib/ as package:<your_package>/…, matching
+                                 `always_use_package_imports`. Off by default;
+                                 never together with --relative-imports.
       --attach-comments          Keep a // comment written directly above an
                                  import with that import. Without it the
                                  comment ends up below the sorted block. The
