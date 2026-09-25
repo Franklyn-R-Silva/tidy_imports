@@ -876,8 +876,12 @@ void _printReport(
 
   _printMetrics(graph, scope: scope, depth: featureDepth);
 
+  // An unused dependency is said, but it is a warning: it never fails
+  // --exit-if-changed, since a font or a plugin is used without an import.
+  final warnings = unused.length;
   stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
-      '$findings ${findings == 1 ? 'finding' : 'findings'}');
+      '$findings ${findings == 1 ? 'finding' : 'findings'}'
+      '${warnings == 0 ? '' : ', $warnings ${warnings == 1 ? 'warning' : 'warnings'}'}');
 }
 
 /// The ranked lists and the feature coupling. Informational: none of it is a

@@ -21,9 +21,15 @@ class DependencyAudit {
 
   const DependencyAudit(this.unused, this.devOnly);
 
-  /// How many things are wrong: each unused dependency and each dev-only
-  /// package counts once, however many files import it.
-  int get findings => unused.length + devOnly.length;
+  /// What fails `--report --exit-if-changed`: each dev-only package, once,
+  /// however many files import it. That one breaks every consumer and is
+  /// almost never wrong.
+  ///
+  /// An unused dependency is a warning, not a finding: a font, a platform
+  /// plugin or a code generator is used without any import, so the check is
+  /// wrong about it often enough that failing a build on it would be the tool
+  /// crying wolf.
+  int get findings => devOnly.length;
 
   /// The audit as a JSON-ready map.
   Map<String, Object?> toJson() => {

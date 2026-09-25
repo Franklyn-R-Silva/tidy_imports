@@ -35,10 +35,12 @@ dart run tidy_imports --report
 ┃  Strongest coupling:
 ┃     lib/features/auth → lib/core  (2 imports)
 ┃     lib/features/cart → lib/core  (2 imports)
-┗━━ • 5 findings
+┗━━ • 4 findings, 1 warning
 ```
 
-The first four sections are **findings**; the rest is information.
+Cycles, dead files and dev-only imports are **findings** — they fail
+`--exit-if-changed`. An unused dependency is a **warning**: said, never failed on,
+since a font or a plugin is used without an import. The rest is information.
 
 ## Findings
 
@@ -55,7 +57,7 @@ files that only import each other.
 
 ### Checking imports against `pubspec.yaml`
 
-**A dependency nothing imports.** Declared under `dependencies:` and named by
+**A dependency nothing imports** — a warning. Declared under `dependencies:` and named by
 no `import`, `export` or `part` anywhere in the package — tests included, so a
 package used only by the tests is not reported here. SDK entries
 (`flutter: {sdk: flutter}`) and `cupertino_icons` are never reported.
@@ -290,7 +292,7 @@ What a pattern narrows, precisely:
 dart run tidy_imports --report --exit-if-changed
 ```
 
-Exits 1 on any finding, with a line on stderr saying why, so a cycle or a
+Exits 1 on any finding — never on a warning — with a line on stderr saying why, so a cycle or a
 dev-only import introduced by a pull request fails the build instead of
 settling in. A run that finds no Dart files at all also exits 1 here: a gate
 that inspected nothing must not pass. See [CI](ci.md) for putting the Mermaid

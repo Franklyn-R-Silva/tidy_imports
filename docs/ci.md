@@ -44,7 +44,7 @@ lands between the fences. For a large project, pass a pattern
 | Code | When |
 |---|---|
 | `0` | Nothing to report. Files were sorted, or — in a read-only mode — none needed it |
-| `1` | Something you asked to hear about: a file needs sorting under `--exit-if-changed`; a finding under `--report --exit-if-changed`; a conflict or a fight under `--doctor --exit-if-changed`; a configuration problem under `--strict-config`; a file that could not be read; an invalid pattern, flag or value; a missing or nameless `pubspec.yaml` |
+| `1` | Something you asked to hear about: a file needs sorting under `--exit-if-changed`; a finding under `--report --exit-if-changed` (an unused dependency is only a warning); a conflict or a fight under `--doctor --exit-if-changed`; a configuration problem under `--strict-config`; a file that could not be read; an invalid pattern, flag or value; a missing or nameless `pubspec.yaml` |
 
 Under `--remove-unused` a failing `dart fix` exits with whatever code `dart fix`
 returned, so a broken analysis stays distinguishable from an unsorted file.

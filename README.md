@@ -199,7 +199,7 @@ $ dart run tidy_imports --report --feature-depth=2
 ┃  Features at feature_depth 2 — files, imports in and out, instability:
 ┃     lib/core              3 files  in   7  out   0  I 0.00
 ┃     lib/features/cart     1 files  in   1  out   3  I 0.75
-┗━━ • 5 findings
+┗━━ • 4 findings, 1 warning
 ```
 
 `--format=mermaid` turns the same graph into a diagram GitHub draws in a README

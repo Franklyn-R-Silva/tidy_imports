@@ -58,8 +58,10 @@ but was filed as relative.
 
 ### Behaviour change
 
-* `--report --exit-if-changed` can now fail on a dependency finding. List a
-  dependency used without an import under `ignored_dependencies`
+* `--report --exit-if-changed` can now fail on a dev dependency imported from
+  `lib/`, `bin/` or `hook/` — a real defect for every consumer. An unused
+  dependency is only a warning and never fails it, since a font, a plugin or a
+  generator is used without an import
 
 ### Docs
 

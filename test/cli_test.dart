@@ -1033,6 +1033,21 @@ dev_dependencies:
       expect(result.stdout, contains('mocktail — lib/main.dart'));
     });
 
+    test('an unused dependency warns, but never fails --exit-if-changed', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  intl: any
+''');
+      libFile('demo.dart').writeAsStringSync('class Demo {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      expect(result.stdout, contains('     intl'));
+      expect(result.stdout, contains('0 findings, 1 warning'));
+    });
+
     test('ignored_dependencies keeps a dependency out of the report', () {
       File('${temp.path}/pubspec.yaml').writeAsStringSync('''
 name: demo

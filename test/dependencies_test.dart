@@ -208,7 +208,7 @@ dev_dependencies:
       expect(audit.devOnly, isEmpty);
     });
 
-    test('findings count each package once', () {
+    test('findings count each dev-only package once, and no unused one', () {
       final audit = auditDependencies(
         declared,
         directivesByFile: {
@@ -217,7 +217,13 @@ dev_dependencies:
         },
       );
 
-      expect(audit.findings, 1 + 3, reason: 'mocktail, and three unused');
+      expect(audit.unused, hasLength(3));
+      expect(
+        audit.findings,
+        1,
+        reason: 'an unused dependency is a warning: a font or a plugin is used '
+            'without an import, so failing a build on it would cry wolf',
+      );
     });
 
     test('toJson names the package and its files', () {
