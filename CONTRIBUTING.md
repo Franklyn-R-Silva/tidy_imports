@@ -28,10 +28,30 @@ here means a green PR:
 dart format .                          # auto-format
 dart analyze --fatal-infos             # static analysis; infos fail the build
 dart test                              # test suite
-dart run tool/check_version_sync.dart  # pubspec / version.dart / CHANGELOG agree
+dart run tool/check_version_sync.dart  # pubspec / version.dart / CHANGELOG / README agree
+dart pub publish --dry-run             # the package builds, and ships what it should
 ```
 
 Note `--fatal-infos`: a lint *info* fails CI, not just a warning.
+
+## Adding an option
+
+An option lives in five places, and a missing one is a bug a user meets:
+
+1. the parser in `bin/tidy_imports.dart` — negatable if it mirrors a config key;
+2. the `_help` text in `lib/args.dart`;
+3. `TidyConfig` in `lib/config.dart`, **and** its key in `_knownKeys`, or a
+   valid config starts warning (the test
+   `every option the reader supports passes without a word` catches it);
+4. the table in [`docs/configuration.md`](docs/configuration.md);
+5. the options table in the README.
+
+## Documentation
+
+The README is the package's landing page on pub.dev: a tour that links out. The
+reference lives in [`docs/`](docs/README.md), read on GitHub and left out of the
+package. Links from the README into `docs/`, and its images, are absolute GitHub
+URLs, since the same file renders on pub.dev.
 
 ## Commit Message Format
 
@@ -67,8 +87,8 @@ BREAKING CHANGE: relative imports now appear before package imports
 
 ## Release Process
 
-Releases are cut by hand. One commit moves three files together, and CI refuses
-the push if any of them lags behind:
+Releases are cut by hand. One commit moves the version everywhere it is
+written, and CI refuses the push if any of them lags behind:
 
 1. Pick the version from the commits since the last tag — `feat:` means a minor
    bump, `fix:` a patch, `feat!:` a major.
@@ -76,6 +96,8 @@ the push if any of them lags behind:
    - `version:` in `pubspec.yaml`
    - `packageVersion` in `lib/src/version.dart`
    - a new section at the **top** of `CHANGELOG.md`, newest first
+   - the two lines the README hands people to copy: `tidy_imports: ^x.y.z`
+     and the pre-commit `rev: 'vx.y.z'`
 3. Check it locally before pushing — this is the same gate CI runs:
 
 ```sh

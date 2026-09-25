@@ -19,4 +19,4 @@
 - [ ] `dart format .` applied
 - [ ] `dart test` passes
 - [ ] Added or updated tests for the change
-- [ ] Updated documentation (README / CONTRIBUTING) if behavior changed
+- [ ] Updated documentation (README / `docs/` / CONTRIBUTING) if behavior changed
