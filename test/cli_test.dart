@@ -192,6 +192,49 @@ export 'package:demo/z.dart';
     );
   });
 
+  test('never walks into hidden directories or a package build/', () {
+    // A sub-package's `.dart_tool/` and `build/` hold generated Dart, and a
+    // Flutter app's `.plugin_symlinks/` lead into the pub cache. None of it is
+    // the project's to rewrite. `lib/src/build/` is ordinary source.
+    final hidden = File(
+      '${temp.path}/packages/app/.dart_tool/build/entrypoint/build.dart',
+    )
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+    final output = File('${temp.path}/packages/app/build/gen/x.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+    File('${temp.path}/packages/app/pubspec.yaml')
+        .writeAsStringSync('name: app\n');
+    final source = File('${temp.path}/lib/src/build/y.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+
+    expect(run().exitCode, 0);
+
+    expect(hidden.readAsStringSync(), unsorted);
+    expect(output.readAsStringSync(), unsorted);
+    expect(source.readAsStringSync(), sorted);
+  });
+
+  test('never follows a link out of the project', () {
+    final outside = Directory.systemTemp.createTempSync('tidy_imports_link_');
+    addTearDown(() => outside.deleteSync(recursive: true));
+    final foreign = File('${outside.path}/plugin.dart')
+      ..writeAsStringSync(unsorted);
+
+    try {
+      Link('${temp.path}/lib/plugin').createSync(outside.path);
+    } on FileSystemException {
+      // Windows only lets an elevated or developer-mode shell make a link.
+      markTestSkipped('this platform does not allow creating a link here');
+      return;
+    }
+
+    expect(run().exitCode, 0);
+    expect(foreign.readAsStringSync(), unsorted);
+  });
+
   test('reports an invalid ignored_files pattern instead of crashing', () {
     File('${temp.path}/pubspec.yaml').writeAsStringSync('''
 name: demo
@@ -379,6 +422,214 @@ void main() {}
     );
   });
 
+  test('--package-imports rewrites relative uris under lib/', () {
+    Directory('${temp.path}/lib/src/p2').createSync(recursive: true);
+    final file = File('${temp.path}/lib/src/p2/bar.dart')
+      ..writeAsStringSync("import '../foo.dart';\n\nvoid main() {}\n");
+
+    expect(run(['--package-imports', '--no-comments']).exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      "import 'package:demo/src/foo.dart';\n\nvoid main() {}\n",
+    );
+  });
+
+  test('package_imports from the config is overridden by --relative-imports',
+      () {
+    File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  package_imports: true
+''');
+    final file = libFile('a.dart')
+      ..writeAsStringSync(
+        "import 'package:demo/src/b.dart';\n\nvoid main() {}\n",
+      );
+
+    final result = run(['--relative-imports', '--no-comments']);
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(file.readAsStringSync(), startsWith("import 'src/b.dart';"));
+  });
+
+  test('--relative-imports with --package-imports is an error', () {
+    libFile('a.dart').writeAsStringSync(unsorted);
+
+    final result = run(['--relative-imports', '--package-imports']);
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('opposite directions'));
+    expect(libFile('a.dart').readAsStringSync(), unsorted);
+  });
+
+  group('--doctor', () {
+    void lints(List<String> rules) =>
+        File('${temp.path}/analysis_options.yaml').writeAsStringSync(
+          'linter:\n  rules:\n${rules.map((r) => '    - $r\n').join()}',
+        );
+
+    test('with no lint that reads imports, has nothing to change', () {
+      lints(['avoid_print']);
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Nothing to change'));
+    });
+
+    test('says which flag agrees with directives_ordering', () {
+      lints(['directives_ordering']);
+      libFile('a.dart').writeAsStringSync(unsorted);
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('flat: true'));
+      expect(result.stdout, contains('--apply'));
+      expect(
+        libFile('a.dart').readAsStringSync(),
+        unsorted,
+        reason: '--doctor reads the configuration; it sorts nothing',
+      );
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--apply writes the keys, and a second look finds nothing', () {
+      lints(['directives_ordering', 'always_use_package_imports']);
+
+      final applied = run(['--doctor', '--apply']);
+
+      expect(applied.exitCode, 0, reason: '${applied.stderr}');
+      expect(
+        File('${temp.path}/pubspec.yaml').readAsStringSync(),
+        'name: demo\n\ntidy_imports:\n'
+        '  flat: true\n  sort_exports: true\n  package_imports: true\n'
+        '  relative_imports: false\n',
+      );
+
+      final again = run(['--doctor', '--exit-if-changed']);
+      expect(again.exitCode, 0, reason: '${again.stdout}');
+      expect(again.stdout, contains('Nothing to change'));
+    });
+
+    test('--apply settles a config that asked for both rewrites', () {
+      // The config reader applies neither of two opposite options, so the
+      // doctor saw both off and suggested one — and --apply wrote it next to
+      // the other, which was still on. Every later run was the same loop.
+      lints(['always_use_package_imports']);
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  relative_imports: true
+  package_imports: true
+''');
+
+      expect(run(['--doctor', '--apply']).exitCode, 0);
+
+      final again = run(['--doctor', '--exit-if-changed']);
+      expect(again.exitCode, 0, reason: '${again.stdout}${again.stderr}');
+      expect(again.stdout, contains('Nothing to change'));
+      expect(again.stderr, isNot(contains('both on')));
+    });
+
+    test('--apply edits a standalone tidy_imports.yaml when there is one', () {
+      lints(['always_use_package_imports']);
+      final standalone = File('${temp.path}/tidy_imports.yaml')
+        ..writeAsStringSync('emojis: true\n');
+
+      expect(run(['--doctor', '--apply']).exitCode, 0);
+
+      expect(
+        standalone.readAsStringSync(),
+        'emojis: true\npackage_imports: true\nrelative_imports: false\n',
+      );
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--apply with --dry-run writes nothing', () {
+      lints(['directives_ordering']);
+
+      final result = run(['--doctor', '--apply', '--dry-run']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Would write'));
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('--exit-if-changed fails on a fight', () {
+      lints(['directives_ordering']);
+
+      final result = run(['--doctor', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--exit-if-changed'));
+    });
+
+    test('--exit-if-changed passes on a suggestion alone', () {
+      lints(['always_use_package_imports']);
+
+      expect(run(['--doctor', '--exit-if-changed']).exitCode, 0);
+    });
+
+    test('two contradicting lints are a conflict --apply cannot settle', () {
+      lints(['prefer_relative_imports', 'always_use_package_imports']);
+
+      final result = run(['--doctor', '--apply', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, contains('contradict'));
+      expect(
+          File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
+    });
+
+    test('an include that does not resolve is reported, not fatal', () {
+      File('${temp.path}/analysis_options.yaml').writeAsStringSync(
+        'include: package:not_resolved/options.yaml\n',
+      );
+
+      final result = run(['--doctor']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('dart pub get'));
+    });
+
+    test('--apply without --doctor is an error', () {
+      final result = run(['--apply']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--doctor'));
+    });
+
+    test('--doctor with --ignore-config is an error, and writes nothing', () {
+      // It would judge the defaults and --apply them over the real file.
+      lints(['prefer_relative_imports']);
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  package_imports: true
+''');
+
+      final result = run(['--doctor', '--ignore-config', '--apply']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--ignore-config'));
+      expect(
+        File('${temp.path}/pubspec.yaml').readAsStringSync(),
+        contains('package_imports: true'),
+      );
+    });
+
+    test('--doctor with --report is an error', () {
+      final result = run(['--doctor', '--report']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('separate run modes'));
+    });
+  });
+
   group('--report', () {
     String out(List<String> args) => run(args).stdout as String;
 
@@ -564,8 +815,9 @@ void main() {}
       final text = out(['--report', 'lib/features/']);
 
       expect(text, contains('1 group of files that import each other'));
-      expect(text, isNot(contains('lib/features/y.dart')),
-          reason: 'main.dart is outside the pattern but still in the graph');
+      expect(text, contains('Every file under lib/ is reachable'),
+          reason: 'main.dart is outside the pattern but still in the graph, '
+              'so y.dart is not dead');
     });
 
     test('an importer under example/ keeps a lib/ file alive', () {
@@ -670,6 +922,214 @@ void main() {}
       libFile('a.dart').writeAsStringSync('class A {}\n');
 
       expect(run(['--report', '--exit-if-changed']).exitCode, 0);
+    });
+
+    test('names the most imported files and the features', () {
+      at('lib/core/theme.dart').writeAsStringSync('class Theme {}\n');
+      at('lib/auth/login.dart')
+          .writeAsStringSync("import '../core/theme.dart';\n");
+      libFile('main.dart').writeAsStringSync(
+        "import 'auth/login.dart';\nimport 'core/theme.dart';\n"
+        'void main() {}\n',
+      );
+
+      final text = out(['--report']);
+
+      expect(text, contains('Most imported:'));
+      expect(text, contains('2  lib/core/theme.dart'));
+      expect(text, contains('Strongest coupling:'));
+      expect(text, contains('lib/auth → lib/core  (1 import)'));
+    });
+
+    test('the feature table keeps to the ten most coupled features', () {
+      // Twelve features: f0..f9 each import `core`, and lonely has no edge.
+      at('lib/core/c.dart').writeAsStringSync('class C {}\n');
+      at('lib/lonely/l.dart').writeAsStringSync('class L {}\n');
+      for (var i = 0; i < 10; i++) {
+        at('lib/f$i/x.dart').writeAsStringSync("import '../core/c.dart';\n");
+      }
+
+      final text = out(['--report']);
+
+      expect(text, contains('lib/core '));
+      expect(text, isNot(contains('lib/lonely ')));
+      expect(text, contains('(+2 less coupled — --format=json lists every'));
+    });
+
+    test('--format=mermaid prints only the diagram', () {
+      writeProject();
+
+      final result = run(['--report', '--format=mermaid']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, startsWith('flowchart LR\n'));
+      expect(result.stdout, isNot(contains('┏━━')));
+      expect(result.stdout, contains('linkStyle'), reason: 'the a-b-c cycle');
+      expect(result.stdout, contains('class '), reason: 'dead.dart is dashed');
+    });
+
+    test('--format=dot prints a digraph', () {
+      writeProject();
+
+      final dot = out(['--report', '--format=dot']);
+
+      expect(dot, startsWith('digraph imports {'));
+      expect(dot, contains('"lib/a.dart" -> "lib/c.dart"'));
+    });
+
+    test('--format=json is a document, and keeps the exit code', () {
+      writeProject();
+
+      final result = run(['--report', '--format=json', '--exit-if-changed']);
+
+      expect(result.exitCode, 1, reason: 'the cycle and the dead file');
+      final report = jsonDecode(result.stdout as String) as Map;
+      expect(report['schemaVersion'], 1);
+      expect(report['unreachable'], contains('lib/dead.dart'));
+      expect(report['cycles'] as List, hasLength(1));
+    });
+
+    test('--feature-depth splits features one folder deeper', () {
+      at('lib/features/auth/login.dart')
+          .writeAsStringSync("import '../home/home.dart';\n");
+      at('lib/features/home/home.dart').writeAsStringSync('class Home {}\n');
+
+      final report = jsonDecode(
+        out(['--report', '--format=json', '--feature-depth=2']),
+      ) as Map;
+
+      expect(
+        (report['metrics'] as Map)['coupling'],
+        [
+          {
+            'from': 'lib/features/auth',
+            'to': 'lib/features/home',
+            'edges': 1,
+          },
+        ],
+      );
+    });
+
+    test('names a dependency nothing imports, and one shipped as dev-only', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  http: any
+  intl: any
+dev_dependencies:
+  mocktail: any
+''');
+      libFile('main.dart').writeAsStringSync(
+        "import 'package:http/http.dart';\n"
+        "import 'package:mocktail/mocktail.dart';\n"
+        'void main() {}\n',
+      );
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, contains('1 dependency in pubspec.yaml nothing '));
+      expect(result.stdout, contains('     intl'));
+      expect(result.stdout, contains('mocktail — lib/main.dart'));
+    });
+
+    test('an unused dependency warns, but never fails --exit-if-changed', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  intl: any
+''');
+      libFile('demo.dart').writeAsStringSync('class Demo {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      expect(result.stdout, contains('     intl'));
+      expect(result.stdout, contains('0 findings, 1 warning'));
+    });
+
+    test('ignored_dependencies keeps a dependency out of the report', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  flutter_native_splash: any
+tidy_imports:
+  ignored_dependencies:
+    - flutter_native_splash
+''');
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}');
+      expect(result.stdout, contains('pubspec.yaml agrees with the imports'));
+    });
+
+    test('--format=json carries the dependency audit', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  intl: any
+''');
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+
+      final report = jsonDecode(out(['--report', '--format=json']))
+          as Map<String, Object?>;
+
+      expect(report['dependencies'], {
+        'unused': ['intl'],
+        'devOnly': <Object?>[],
+      });
+    });
+
+    test('a dependency used only by a build hook is not unused', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  hooks: any
+''');
+      at('hook/build.dart').writeAsStringSync(
+        "import 'package:hooks/hooks.dart';\nvoid main() {}\n",
+      );
+      libFile('demo.dart').writeAsStringSync('class Demo {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}');
+      expect(result.stdout, contains('pubspec.yaml agrees with the imports'));
+    });
+
+    test('--format=json with nothing to scan is still a document', () {
+      Directory('${temp.path}/lib').deleteSync(recursive: true);
+
+      final result = run(['--report', '--format=json']);
+
+      expect(result.exitCode, 0);
+      final report = jsonDecode(result.stdout as String) as Map;
+      expect(report['schemaVersion'], 1);
+      expect(report['files'], isEmpty);
+      expect(result.stderr, contains('nothing to report'));
+    });
+
+    test('an unknown --format is an error line', () {
+      final result = run(['--report', '--format=svg']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('svg'));
+    });
+
+    test('--format without --report is an error', () {
+      final result = run(['--format=json']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--report'));
+    });
+
+    test('a --feature-depth below 1 is an error', () {
+      final result = run(['--report', '--feature-depth=0']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--feature-depth'));
     });
   });
 

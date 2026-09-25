@@ -18,9 +18,10 @@ const standardDirectories = [
 /// They are never sorted — nobody asked for `example/` to be reformatted — but
 /// a directive in them is still a reason for a `lib/` file to exist. `web/`
 /// holds the only entry point a Dart web project has; `example/` and `tool/`
-/// are pub conventions; `benchmark/` is common. Leaving them out made every
-/// file used only from there look unreferenced.
-const reportDirectories = ['example', 'tool', 'web', 'benchmark'];
+/// are pub conventions; `benchmark/` is common; `hook/` holds the build hooks
+/// pub runs for every package that depends on this one. Leaving them out made
+/// every file — and every dependency — used only from there look unused.
+const reportDirectories = ['example', 'tool', 'web', 'benchmark', 'hook'];
 
 /// Returns all dart files found in [standardDirectories], plus any
 /// [extraDirectories].
@@ -67,6 +68,16 @@ Map<String, File> dartFiles(
   return filesToKeep;
 }
 
+/// Every file called [name] under `<currentPath>/<dir>`, found by the walk
+/// [dartFiles] uses — so no link is followed, and hidden directories and a
+/// package's `build/` output are skipped. The report finds sub-package
+/// pubspecs with it: a walk of its own that followed links went through a
+/// Flutter app's `.plugin_symlinks/` into the pub cache.
+List<File> filesNamed(String currentPath, String dir, String name) => [
+      for (final entity in _readDir(currentPath, dir))
+        if (entity is File && _baseName(entity.path) == name) entity,
+    ];
+
 /// [path] with Windows separators rewritten as `/`.
 ///
 /// Patterns are written with forward slashes — the README, the help text and
@@ -93,10 +104,43 @@ List<RegExp> compilePatterns(Iterable<String> patterns, String label) {
   return matchers;
 }
 
+/// Every entity under `<currentPath>/<name>`, walked without following links.
+///
+/// `listSync(recursive: true)` follows links by default, and a Flutter app
+/// under `packages/` carries links into the pub cache:
+/// `windows/flutter/ephemeral/.plugin_symlinks/` and `ios/.symlinks/plugins/`
+/// point at every plugin's own `lib/`. The sorter used to walk through them
+/// and rewrite plugin sources that belong to no project at all. A link is now
+/// never entered — and a link to a file is a [Link], not a [File], so it is
+/// never sorted either.
+///
+/// Hidden directories (`.dart_tool/`, `.symlinks/`) and a package's `build/`
+/// output are generated, so they are pruned too — `build/` only where it sits
+/// beside a `pubspec.yaml`, since `lib/src/build/` is ordinary source.
 List<FileSystemEntity> _readDir(String currentPath, String name) {
-  final dir = Directory('$currentPath/$name');
-  if (dir.existsSync()) {
-    return dir.listSync(recursive: true);
+  final root = Directory('$currentPath/$name');
+  if (!root.existsSync()) return [];
+
+  final found = <FileSystemEntity>[];
+  void walk(Directory directory) {
+    final children = directory.listSync(followLinks: false);
+    final isPackageRoot =
+        children.any((e) => e is File && _baseName(e.path) == 'pubspec.yaml');
+    for (final child in children) {
+      if (child is! Directory) {
+        found.add(child);
+        continue;
+      }
+      final base = _baseName(child.path);
+      if (base.startsWith('.') || (isPackageRoot && base == 'build')) continue;
+      found.add(child);
+      walk(child);
+    }
   }
-  return [];
+
+  walk(root);
+  return found;
 }
+
+/// The last segment of [path], on either separator.
+String _baseName(String path) => toPosix(path).split('/').last;

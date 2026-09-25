@@ -194,8 +194,23 @@ void _sorting() {
     libRelativePath: 'features/home/view.dart',
     note: 'Only inside lib/, and only your own package — `package:http` has no '
         'relative form from here. This is what `prefer_relative_imports` '
-        'wants; `always_use_package_imports` wants the opposite, so the '
-        'choice has to be yours.',
+        'wants; `always_use_package_imports` wants the opposite, which is '
+        '--package-imports below.',
+  );
+
+  _demo(
+    '--package-imports: relative imports rewritten as your own package: URIs',
+    [
+      "import '../../core/theme.dart';",
+      "import 'widgets/card.dart';",
+      "import 'package:http/http.dart';",
+      '',
+      'void main() {}',
+    ],
+    packageImports: true,
+    libRelativePath: 'features/home/view.dart',
+    note: 'What `always_use_package_imports` wants. A relative URI that climbs '
+        'out of lib/ has no package: form and is left as written.',
   );
 
   _demo(
@@ -407,6 +422,7 @@ void _demo(
   List<String> testImportPrefixes = TidyConfig.defaultTestImportPrefixes,
   bool flat = false,
   bool relativeImports = false,
+  bool packageImports = false,
   String? libRelativePath,
   bool attachComments = false,
   String? note,
@@ -431,6 +447,7 @@ void _demo(
     testImportPrefixes: testImportPrefixes,
     flat: flat,
     relativeImports: relativeImports,
+    packageImports: packageImports,
     libRelativePath: libRelativePath,
     attachComments: attachComments,
   );

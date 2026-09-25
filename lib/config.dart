@@ -23,13 +23,16 @@ const _knownKeys = {
   'test_imports',
   'test_import_prefixes',
   'ignored_files',
+  'ignored_dependencies',
   'report_roots',
+  'feature_depth',
   'tiers',
   'sort_exports',
   'remove_duplicates',
   'remove_unused',
   'flat',
   'relative_imports',
+  'package_imports',
   'attach_comments',
 };
 
@@ -127,6 +130,16 @@ class TidyConfig {
   /// subfolder — is declared here rather than reported forever.
   final List<String> reportRoots;
 
+  /// Dependencies `--report` never calls unused or dev-only: packages used
+  /// without a Dart import — a font, a code generator, a platform plugin —
+  /// that the check cannot see being used.
+  final List<String> ignoredDependencies;
+
+  /// How many folders under `lib/` make a feature in `--report`'s coupling
+  /// metrics — `lib/src/` looked through. 1 splits `lib/auth` from
+  /// `lib/core`; the common `lib/features/<name>/` layout wants 2.
+  final int featureDepth;
+
   /// Whether `export` directives are sorted into their own block. Opt-in: on
   /// by default it would rewrite the barrel file of every existing project.
   final bool sortExports;
@@ -154,6 +167,12 @@ class TidyConfig {
   /// what `always_use_package_imports` wants — the two lints disagree, so the
   /// choice has to be the user's.
   final bool relativeImports;
+
+  /// Whether relative imports under `lib/` are rewritten as
+  /// `package:<self>/…`, matching the `always_use_package_imports` lint — the
+  /// opposite of [relativeImports]. Opt-in; the two are never both on, and a
+  /// config asking for both gets neither, with an issue saying why.
+  final bool packageImports;
 
   /// How many folder segments — counted after the package root — the project
   /// group is broken up by. 0 keeps the whole path, which is the original
@@ -189,7 +208,10 @@ class TidyConfig {
     this.removeUnused = false,
     this.flat = false,
     this.relativeImports = false,
+    this.packageImports = false,
     this.reportRoots = const [],
+    this.ignoredDependencies = const [],
+    this.featureDepth = 1,
     this.attachComments = false,
     this.issues = const [],
   });
@@ -300,6 +322,20 @@ class TidyConfig {
     final blankLines = _readBool(config, 'blank_lines', issues);
     final testPrefixes = _readStrings(config, 'test_import_prefixes', issues);
 
+    // Each one undoes the other on every run, so honouring both is honouring
+    // neither — and picking one would be guessing which the user meant.
+    var relativeImports =
+        _readBool(config, 'relative_imports', issues) ?? false;
+    var packageImports = _readBool(config, 'package_imports', issues) ?? false;
+    if (relativeImports && packageImports) {
+      issues.add(
+        '`relative_imports` and `package_imports` are both on, and they '
+        'rewrite in opposite directions. Neither is applied — keep the one '
+        'your lints ask for (`dart run tidy_imports --doctor` says which).',
+      );
+      relativeImports = packageImports = false;
+    }
+
     return TidyConfig(
       emojis: _readBool(config, 'emojis', issues) ?? false,
       noComments: comments == null ? false : !comments,
@@ -318,9 +354,12 @@ class TidyConfig {
       removeDuplicates: _readBool(config, 'remove_duplicates', issues) ?? false,
       removeUnused: _readBool(config, 'remove_unused', issues) ?? false,
       flat: _readBool(config, 'flat', issues) ?? false,
-      relativeImports: _readBool(config, 'relative_imports', issues) ?? false,
+      relativeImports: relativeImports,
+      packageImports: packageImports,
       attachComments: _readBool(config, 'attach_comments', issues) ?? false,
       reportRoots: _readStrings(config, 'report_roots', issues),
+      ignoredDependencies: _readStrings(config, 'ignored_dependencies', issues),
+      featureDepth: _readFeatureDepth(config, issues),
       groupProjectByFolderDepth:
           _readInt(config, 'group_project_by_folder_depth', issues) ?? 0,
       issues: issues,
@@ -376,6 +415,18 @@ int? _readInt(
   final List<String> issues,
 ) =>
     _readTyped<int>(config, key, 'a whole number', issues);
+
+/// Reads `feature_depth`, which counts folders and so has to be at least 1.
+int _readFeatureDepth(final YamlMap config, final List<String> issues) {
+  final depth = _readInt(config, 'feature_depth', issues);
+  if (depth == null) return 1;
+  if (depth >= 1) return depth;
+  issues.add(
+    'option `feature_depth` counts folders under lib/, so it has to be 1 or '
+    'more, but it is $depth. Using 1.',
+  );
+  return 1;
+}
 
 /// Reads [key] as a list of strings, reporting both a value that is not a list
 /// and an entry inside it that is not text. A bad entry costs its own line,

@@ -49,6 +49,12 @@ const _maxDirectiveLines = 512;
 /// path there is nothing to be relative *to*, so the rewrite is skipped — as
 /// it is for files outside `lib/`, which cannot reach it with a relative URI
 /// at all (import_sorter#59).
+///
+/// [packageImports] is the other direction, for `always_use_package_imports`:
+/// a relative URI that stays inside `lib/` becomes `package:<packageName>/…`.
+/// One that climbs out of `lib/`, is root-relative (`/x.dart`) or carries a
+/// scheme is left as written. The two are opposites, so asking for both is an
+/// [ArgumentError].
 ImportSortData sortImports(
   List<String> lines,
   String packageName,
@@ -77,9 +83,17 @@ ImportSortData sortImports(
   bool removeDuplicates = false,
   bool flat = false,
   bool relativeImports = false,
+  bool packageImports = false,
   String? libRelativePath,
   bool attachComments = false,
 }) {
+  if (relativeImports && packageImports) {
+    throw ArgumentError(
+      'relativeImports and packageImports rewrite in opposite directions; '
+      'pass at most one of them.',
+    );
+  }
+
   // Asking for a folder depth is asking for folder grouping; requiring both
   // options only creates a way to set the depth and see nothing happen.
   final groupByFolder = groupProjectByFolder || groupProjectByFolderDepth > 0;
@@ -179,31 +193,39 @@ ImportSortData sortImports(
     }
   }
 
-  // `package:<self>/…` rewritten as a path relative to this file. Left alone
-  // when the option is off, when the file's own location is unknown, or when
+  // `package:<self>/…` and a path relative to this file name the same library,
+  // and the two lints disagree on which to write: [relativeImports] turns the
+  // first into the second, [packageImports] the second into the first. Left
+  // alone when both are off, when the file's own location is unknown, or when
   // the URI points anywhere else — another package's `package:` URI has no
-  // relative form from here.
-  _Directive relativize(_Directive directive) {
+  // relative form from here, and a relative one that leaves `lib/` has no
+  // `package:` form.
+  //
+  // Every URI of the directive is rewritten, wherever its line breaks. This
+  // used to replace the first URI on the first line only: an `import` whose
+  // URI sat on the next line kept its text but took the new URI as its sort
+  // key, so a `package:` import was filed among the relative ones; and a
+  // conditional import came out half-rewritten.
+  _Directive rewrite(_Directive directive) {
     final from = libRelativePath;
-    if (!relativeImports || from == null) return directive;
+    if (from == null) return directive;
 
-    const scheme = 'package:';
-    final prefix = '$scheme$packageName/';
-    if (!directive.uri.startsWith(prefix)) return directive;
-
-    final relative =
-        _relativePath(from, directive.uri.substring(prefix.length));
-    if (relative == null) return directive;
-
-    return _Directive(
-      directive.leading,
-      [
-        directive.lines.first.replaceFirst(directive.uri, relative),
-        ...directive.lines.skip(1),
-      ],
-      relative,
-      directive.order,
-    );
+    final prefix = 'package:$packageName/';
+    if (relativeImports) {
+      return _rewriteUris(
+        directive,
+        (uri) => uri.startsWith(prefix)
+            ? _relativePath(from, uri.substring(prefix.length))
+            : null,
+      );
+    }
+    if (packageImports) {
+      return _rewriteUris(directive, (uri) {
+        final path = _resolveInLib(from, uri);
+        return path == null ? null : '$prefix$path';
+      });
+    }
+    return directive;
   }
 
   // Signatures of the directives kept so far, for [removeDuplicates].
@@ -257,7 +279,7 @@ ImportSortData sortImports(
             // Rewrite first: a `package:` URI and its relative form are the
             // same import, and only look like duplicates once both are
             // written the same way.
-            final directive = relativize(
+            final directive = rewrite(
               _Directive(lines.sublist(index, start), body, uri, order++),
             );
             if (removeDuplicates && !seen.add(directive.signature)) {
@@ -521,8 +543,13 @@ final _mainDeclaration = RegExp(
   r'^(?:(?:Future<[^>]*>|FutureOr<[^>]*>|void|dynamic)\s+)?main\s*\(',
 );
 
-/// Matches the quoted URI of a directive.
-final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
+/// Matches the quoted URI of a directive — in group 1 when single-quoted, in
+/// group 2 when double-quoted. A quote never closes a string opened by the
+/// other kind: `"it's.dart"` is one URI, not `it`.
+final _uriPattern = RegExp(r"'([^']+)'" '|' r'"([^"]+)"');
+
+/// The URI [match] of [_uriPattern] holds.
+String _uriOf(RegExpMatch match) => match.group(1) ?? match.group(2)!;
 
 /// Whether a line opens an `import` / an `export`.
 ///
@@ -556,16 +583,26 @@ bool _isIgnorePragma(String line) {
 /// How many lines the directive starting at [start] spans, or 0 when it never
 /// terminates — the caller then treats the line as ordinary source, which is
 /// what happened to every multi-line directive before this scanner existed.
+///
+/// The `;` is looked for in the directive's code, with every comment masked
+/// out: `import 'a.dart'; /* why */` used to end in `/`, never terminated, and
+/// slid out of the sorted block. A block comment still open at that `;` keeps
+/// the directive going until it closes, or the comment's tail would be left
+/// behind as code.
 int _scanDirective(List<String> lines, int start) {
   final limit = start + _maxDirectiveLines;
+  final mask = _CommentMask();
+  var terminated = false;
   for (var i = start; i < lines.length && i < limit; i++) {
     // A directive never contains the start of another one. Meeting one means
     // the first never terminated, and it is better to give that one up than
     // to swallow the second into it.
-    if (i > start && _startsDirectiveKeyword(lines[i])) return 0;
-    if (_stripTrailingComment(lines[i]).endsWith(';')) {
-      return i - start + 1;
+    if (i > start && !mask.inComment && _startsDirectiveKeyword(lines[i])) {
+      return 0;
     }
+    final code = mask.mask(lines[i]).trimRight();
+    terminated = terminated || code.endsWith(';');
+    if (terminated && !mask.inComment) return i - start + 1;
   }
   return 0;
 }
@@ -590,44 +627,82 @@ final _fileDirective = RegExp(r'^(?:import|export|part)(?:\s|$)');
 ///
 /// That is the default one plus each `if (dart.library.x) 'uri'` target of a
 /// conditional import or export. `show`, `hide`, `as` and `deferred` take bare
-/// identifiers, so every quoted string in a directive is a URI — once trailing
-/// comments are stripped, so a `// see 'other.dart'` is not read as one.
-List<String> _directiveTargets(List<String> body) => [
-      for (final line in body)
-        for (final match in _uriPattern.allMatches(_stripTrailingComment(line)))
-          match.group(1)!,
-    ];
+/// identifiers, so every quoted string in a directive's *code* is a URI.
+/// Comments are masked out first — a `// see 'other.dart'` or a
+/// `/* was 'old.dart' */` is not an import, and read as one it became a graph
+/// edge and a dependency in use.
+List<String> _directiveTargets(List<String> body) {
+  final mask = _CommentMask();
+  return [
+    for (final line in body)
+      for (final match in _uriPattern.allMatches(mask.mask(line)))
+        _uriOf(match),
+  ];
+}
 
-/// [line] without its trailing `//` comment.
+/// Masks the comments out of directive source, one line at a time: every
+/// character inside a `//` comment or a `/* */` block becomes a space, so a
+/// quoted path in a comment is not read as a URI — and since the length never
+/// changes, an index into the result is an index into the line.
 ///
-/// The scan tracks string literals, so neither a `//` inside a quoted URI nor
-/// a `;` inside a comment can fool the terminator test in [_scanDirective].
-String _stripTrailingComment(String line) {
-  String? quote;
-  var escaped = false;
-  for (var i = 0; i < line.length; i++) {
-    final char = line[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (quote != null) {
-      if (char == r'\') {
-        escaped = true;
-      } else if (char == quote) {
-        quote = null;
+/// Block comments nest in Dart and may span lines, so the depth is carried
+/// from one [mask] call to the next. String literals are tracked, so a `//`
+/// or `/*` inside a quoted URI is not a comment.
+class _CommentMask {
+  var _depth = 0;
+
+  /// Whether the last line masked ended inside a block comment.
+  bool get inComment => _depth > 0;
+
+  String mask(String line) {
+    final out = StringBuffer();
+    String? quote;
+    var escaped = false;
+    var i = 0;
+    bool at(String pair) =>
+        i + 1 < line.length && line[i] == pair[0] && line[i + 1] == pair[1];
+
+    while (i < line.length) {
+      final char = line[i];
+      if (_depth > 0) {
+        if (at('*/') || at('/*')) {
+          _depth += at('/*') ? 1 : -1;
+          out.write('  ');
+          i += 2;
+        } else {
+          out.write(' ');
+          i++;
+        }
+        continue;
       }
-      continue;
+      if (quote != null) {
+        out.write(char);
+        if (escaped) {
+          escaped = false;
+        } else if (char == r'\') {
+          escaped = true;
+        } else if (char == quote) {
+          quote = null;
+        }
+        i++;
+        continue;
+      }
+      if (char == "'" || char == '"') {
+        quote = char;
+      } else if (at('//')) {
+        out.write(' ' * (line.length - i));
+        break;
+      } else if (at('/*')) {
+        _depth++;
+        out.write('  ');
+        i += 2;
+        continue;
+      }
+      out.write(char);
+      i++;
     }
-    if (char == "'" || char == '"') {
-      quote = char;
-      continue;
-    }
-    if (char == '/' && i + 1 < line.length && line[i + 1] == '/') {
-      return line.substring(0, i).trimRight();
-    }
+    return out.toString();
   }
-  return line.trimRight();
 }
 
 /// Sorts the way `directives_ordering` reads a file: `dart:` first, then
@@ -671,6 +746,77 @@ String? _relativePath(String from, String to) {
     ...toParts.sublist(common),
   ];
   return parts.isEmpty ? null : parts.join('/');
+}
+
+/// The path, relative to `lib/`, that the relative [uri] written in [from]
+/// points at — or null when [uri] is not a relative path to a Dart file that
+/// stays inside `lib/`.
+///
+/// A scheme (`dart:`, `package:`, `http:`) or a leading `/` means the URI is
+/// not relative to [from] at all. Only `.dart` targets count: a conditional
+/// import's `== 'true'` value is quoted too, and is not a path.
+String? _resolveInLib(String from, String uri) {
+  if (!uri.endsWith('.dart') || uri.startsWith('/') || _scheme.hasMatch(uri)) {
+    return null;
+  }
+
+  final parts = from.split('/')..removeLast();
+  for (final segment in uri.split('/')) {
+    if (segment == '.' || segment.isEmpty) continue;
+    if (segment == '..') {
+      if (parts.isEmpty) return null;
+      parts.removeLast();
+      continue;
+    }
+    parts.add(segment);
+  }
+  return parts.join('/');
+}
+
+final _scheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*:');
+
+/// [directive] with each of its URIs passed through [rewrite], which returns
+/// the replacement or null to keep the URI as written.
+///
+/// Every quoted URI in the directive's code is a candidate — the default one
+/// and each conditional target, on whichever line it sits — and nothing in a
+/// trailing comment is. The rest of each line is kept byte for byte, so a
+/// prefix, a `show` clause or a comment survives the rewrite.
+_Directive _rewriteUris(
+  _Directive directive,
+  String? Function(String uri) rewrite,
+) {
+  var changed = false;
+  final mask = _CommentMask();
+  final lines = [
+    for (final line in directive.lines)
+      () {
+        // Comments are masked to spaces, never cut, so every index into the
+        // code is an index into the line as well — and a path quoted in a
+        // `/* was 'old.dart' */` is never rewritten.
+        final code = mask.mask(line);
+        final out = StringBuffer();
+        var last = 0;
+        for (final match in _uriPattern.allMatches(code)) {
+          final replacement = rewrite(_uriOf(match));
+          if (replacement == null) continue;
+          changed = true;
+          out
+            ..write(line.substring(last, match.start + 1))
+            ..write(replacement);
+          last = match.end - 1;
+        }
+        return (out..write(line.substring(last))).toString();
+      }(),
+  ];
+  if (!changed) return directive;
+
+  return _Directive(
+    directive.leading,
+    lines,
+    rewrite(directive.uri) ?? directive.uri,
+    directive.order,
+  );
 }
 
 /// Sorts by URI, falling back to the original position so equal URIs keep
@@ -857,7 +1003,10 @@ class _Directive {
 
   /// The directive's source without trailing comments — what custom tier
   /// patterns are matched against.
-  String get code => lines.map(_stripTrailingComment).join(' ');
+  String get code {
+    final mask = _CommentMask();
+    return lines.map((line) => mask.mask(line).trimRight()).join(' ');
+  }
 
   /// Identity for duplicate detection: the whole directive, `// ignore:` lines
   /// included, with runs of whitespace collapsed.

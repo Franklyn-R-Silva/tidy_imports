@@ -658,6 +658,41 @@ import 'dart:io';
       expect(config.removeUnused, isFalse);
       expect(config.flat, isFalse);
       expect(config.relativeImports, isFalse);
+      expect(config.packageImports, isFalse);
+    });
+
+    test('feature_depth defaults to 1 and reads a larger value', () {
+      expect(TidyConfig.fromYaml(null).featureDepth, 1);
+      expect(TidyConfig.fromYaml(loadYaml('feature_depth: 2')).featureDepth, 2);
+    });
+
+    test('a feature_depth below 1 is reported and falls back to 1', () {
+      final config = TidyConfig.fromYaml(loadYaml('feature_depth: 0'));
+
+      expect(config.featureDepth, 1);
+      expect(config.issues.single, contains('feature_depth'));
+    });
+
+    test('reads package_imports', () {
+      final config = TidyConfig.fromYaml(loadYaml('package_imports: true'));
+
+      expect(config.packageImports, isTrue);
+      expect(config.issues, isEmpty);
+    });
+
+    test('relative_imports and package_imports together apply neither', () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('relative_imports: true\npackage_imports: true'),
+      );
+
+      expect(config.relativeImports, isFalse);
+      expect(config.packageImports, isFalse);
+      expect(
+        config.issues.single,
+        allOf(contains('relative_imports'), contains('package_imports')),
+        reason: 'each undoes the other on every run, so the file asked for '
+            'nothing — and saying so beats guessing which one was meant',
+      );
     });
 
     test('separate_relative_imports is the one default that is on', () {
@@ -804,6 +839,9 @@ ignored_files:
   - \\.g\\.dart\$
 report_roots:
   - /lib/app/bootstrap.dart
+ignored_dependencies:
+  - flutter_native_splash
+feature_depth: 2
 tiers:
   - name: "Company imports:"
     pattern: "package:acme_"
@@ -812,6 +850,7 @@ remove_duplicates: false
 remove_unused: false
 flat: false
 relative_imports: false
+package_imports: false
 attach_comments: false
 '''),
       );

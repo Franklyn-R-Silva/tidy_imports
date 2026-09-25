@@ -58,6 +58,10 @@ Options
                                  relative paths, matching the
                                  `prefer_relative_imports` lint. Only inside
                                  lib/. Off by default.
+      --package-imports          The opposite: rewrite relative imports under
+                                 lib/ as package:<your_package>/…, matching
+                                 `always_use_package_imports`. Off by default;
+                                 never together with --relative-imports.
       --attach-comments          Keep a // comment written directly above an
                                  import with that import. Without it the
                                  comment ends up below the sorted block. The
@@ -76,15 +80,38 @@ Options
   config file for a single run: --no-emojis, --comments, --no-sort-exports.
 
 Run modes
+      --doctor                   Read analysis_options.yaml — following its
+                                 include: chain — and say whether this
+                                 configuration agrees with the lints that read
+                                 imports (directives_ordering,
+                                 prefer_relative_imports,
+                                 always_use_package_imports) and with
+                                 dart format. Flags two lints that contradict
+                                 each other. Sorts nothing.
+      --apply                    With --doctor: write the keys it suggests
+                                 into tidy_imports.yaml or the pubspec block.
       --report                   Read the project's own import graph and say
                                  what it found: files that import each other,
-                                 and files under lib/ no entry point reaches.
-                                 Sorts nothing, writes nothing. Patterns and
-                                 ignored_files narrow what is printed, never
-                                 what is read.
+                                 files under lib/ no entry point reaches,
+                                 dependencies nothing imports, dev-only
+                                 packages imported from lib/, bin/ or hook/,
+                                 the most imported files and how the
+                                 features couple. Sorts nothing, writes
+                                 nothing.
+                                 Patterns and ignored_files narrow what is
+                                 printed, never what is read.
+      --format=<text|mermaid|dot|json>
+                                 With --report: print a Mermaid diagram (GitHub
+                                 draws it in a README or a pull request),
+                                 Graphviz DOT, or JSON instead of text. Only
+                                 the artifact goes to stdout.
+      --feature-depth=<n>        With --report: how many folders under lib/
+                                 make a feature (lib/src/ is looked through).
+                                 Default 1; lib/features/<name>/ wants 2.
       --dry-run                  Report what would change; write nothing.
       --exit-if-changed          Exit 1 if anything is unsorted — or, with
-                                 --report, on any finding. For CI.
+                                 --report, on any finding; with --doctor, on
+                                 a conflict or a fight. For CI.
       --ignore-config            Ignore tidy_imports.yaml and the pubspec block.
       --strict-config            Exit 1 on a configuration problem instead of
                                  warning about it. Either way it is reported:
@@ -108,7 +135,10 @@ Examples
   dart run tidy_imports lib/main.dart
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
-  dart run tidy_imports --report          # cycles and dead files
+  dart run tidy_imports --report          # cycles, dead files, coupling
+  dart run tidy_imports --report --format=mermaid > imports.mmd
+  dart run tidy_imports --doctor          # which options your lints want
+  dart run tidy_imports --doctor --apply  # ...and write them to the config
   dart run tidy_imports --flat            # satisfy directives_ordering
   dart run tidy_imports --remove-unused --remove-duplicates
   dart run tidy_imports --no-emojis

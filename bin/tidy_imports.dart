@@ -1,6 +1,7 @@
 // Dart imports:
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 // Package imports:
 import 'package:args/args.dart';
@@ -10,8 +11,12 @@ import 'package:yaml/yaml.dart';
 // Project imports:
 import 'package:tidy_imports/args.dart' as local_args;
 import 'package:tidy_imports/config.dart';
+import 'package:tidy_imports/config_edit.dart';
+import 'package:tidy_imports/dependencies.dart';
+import 'package:tidy_imports/doctor.dart';
 import 'package:tidy_imports/files.dart' as files;
 import 'package:tidy_imports/graph.dart';
+import 'package:tidy_imports/graph_export.dart';
 import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
 import 'package:tidy_imports/sort.dart' as sort;
 
@@ -32,6 +37,7 @@ void main(List<String> args) {
     ..addFlag('remove-duplicates')
     ..addFlag('flat')
     ..addFlag('relative-imports')
+    ..addFlag('package-imports')
     ..addFlag('attach-comments')
     ..addFlag('remove-unused')
     ..addFlag('group-by-folder')
@@ -44,7 +50,16 @@ void main(List<String> args) {
     ..addFlag('version', abbr: 'v', negatable: false)
     ..addFlag('exit-if-changed', negatable: false)
     ..addFlag('dry-run', negatable: false)
-    ..addFlag('report', negatable: false);
+    ..addFlag('report', negatable: false)
+    ..addOption(
+      'format',
+      allowed: const ['text', 'mermaid', 'dot', 'json'],
+      defaultsTo: 'text',
+      valueHelp: 'text|mermaid|dot|json',
+    )
+    ..addOption('feature-depth', valueHelp: 'n')
+    ..addFlag('doctor', negatable: false)
+    ..addFlag('apply', negatable: false);
 
   // A typo in a flag is the same kind of mistake as a typo in a file pattern,
   // and used to be the one that printed a stack trace: `ArgParserException`
@@ -64,6 +79,37 @@ void main(List<String> args) {
 
   if (argResults['version'] == true) {
     local_args.outputVersion();
+  }
+
+  final doctor = argResults['doctor'] == true;
+  if (argResults['apply'] == true && !doctor) {
+    stderr.writeln(
+      'Error: --apply writes what --doctor suggests, so it only works with '
+      '--doctor.',
+    );
+    exit(1);
+  }
+  if (doctor && argResults['report'] == true) {
+    stderr.writeln(
+      'Error: --doctor and --report are separate run modes. Pass one of them.',
+    );
+    exit(1);
+  }
+  if (doctor && argResults['ignore-config'] == true) {
+    stderr.writeln(
+      'Error: --doctor judges the configuration, and --ignore-config leaves '
+      'it none to judge.',
+    );
+    exit(1);
+  }
+  for (final option in const ['format', 'feature-depth']) {
+    if (argResults.wasParsed(option) && argResults['report'] != true) {
+      stderr.writeln(
+        'Error: --$option shapes what --report prints, so it only works with '
+        '--report.',
+      );
+      exit(1);
+    }
   }
 
   final currentPath = Directory.current.path;
@@ -152,6 +198,19 @@ void main(List<String> args) {
     }
   }
 
+  // `--doctor` judges the configuration — what every future run reads — so it
+  // runs before any flag is resolved against it, and touches no Dart file.
+  if (doctor) {
+    final exitOnChange = argResults['exit-if-changed'] == true;
+    exit(_doctor(
+      currentPath,
+      config,
+      apply: argResults['apply'] == true,
+      readOnly: exitOnChange || argResults['dry-run'] == true,
+      failOnFindings: exitOnChange,
+    ));
+  }
+
   // A flag the user actually typed wins; otherwise the config decides. This
   // used to be `config.x || flag`, which meant a flag could only ever turn
   // something on — there was no way to opt out of a config key for one run.
@@ -169,7 +228,26 @@ void main(List<String> args) {
       resolve('remove-duplicates', config.removeDuplicates);
   final removeUnused = resolve('remove-unused', config.removeUnused);
   final flat = resolve('flat', config.flat);
-  final relativeImports = resolve('relative-imports', config.relativeImports);
+  var relativeImports = resolve('relative-imports', config.relativeImports);
+  var packageImports = resolve('package-imports', config.packageImports);
+
+  // The two rewrite in opposite directions. A config asking for both already
+  // got neither (and an issue saying so), so a clash here involves a flag: one
+  // typed flag simply wins over the config for this run, two are a mistake.
+  if (relativeImports && packageImports) {
+    final typedRelative = argResults.wasParsed('relative-imports');
+    final typedPackage = argResults.wasParsed('package-imports');
+    if (typedRelative && typedPackage) {
+      stderr.writeln(
+        'Error: --relative-imports and --package-imports rewrite in opposite '
+        'directions. Pass one of them.',
+      );
+      exit(1);
+    }
+    if (typedRelative) packageImports = false;
+    if (typedPackage) relativeImports = false;
+  }
+
   final attachComments = resolve('attach-comments', config.attachComments);
   final groupByFolder = resolve('group-by-folder', config.groupProjectByFolder);
 
@@ -250,6 +328,22 @@ void main(List<String> args) {
   // own: the file set above is what the *sorter* touches, and using it as the
   // graph's node set deleted every edge leaving a filtered-out file.
   if (argResults['report'] == true) {
+    // Features are counted in folders, so anything but a whole number from 1
+    // up is a user error, said the way a bad --group-by-folder-depth is.
+    var featureDepth = config.featureDepth;
+    final featureDepthArg = argResults['feature-depth'] as String?;
+    if (featureDepthArg != null) {
+      final parsed = int.tryParse(featureDepthArg);
+      if (parsed == null || parsed < 1) {
+        stderr.writeln(
+          'Error: --feature-depth expects a whole number of folders, 1 or '
+          'more, got "$featureDepthArg".',
+        );
+        exit(1);
+      }
+      featureDepth = parsed;
+    }
+
     exit(_report(
       currentPath,
       packageName,
@@ -257,7 +351,10 @@ void main(List<String> args) {
       patterns: argResults.rest,
       ignoreMatchers: ignoreMatchers,
       reportRoots: config.reportRoots,
+      ignoredDependencies: config.ignoredDependencies,
       failOnFindings: exitOnChange,
+      format: argResults['format'] as String,
+      featureDepth: featureDepth,
     ));
   }
 
@@ -324,6 +421,7 @@ void main(List<String> args) {
       removeDuplicates: removeDuplicates,
       flat: flat,
       relativeImports: relativeImports,
+      packageImports: packageImports,
       attachComments: attachComments,
       libRelativePath: _libRelativePath(currentPath, filePath),
     );
@@ -486,8 +584,12 @@ int _report(
   required List<String> patterns,
   required List<RegExp> ignoreMatchers,
   required List<String> reportRoots,
+  required List<String> ignoredDependencies,
   required bool failOnFindings,
+  required String format,
+  required int featureDepth,
 }) {
+  final text = format == 'text';
   final scanned = files.dartFiles(
     currentPath,
     const [],
@@ -496,9 +598,31 @@ int _report(
 
   if (scanned.isEmpty) {
     final dirs = [...files.standardDirectories, ...files.reportDirectories];
-    stdout.writeln('┏━━ Reading the import graph');
-    stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under ${dirs.join(', ')} '
-        '— nothing to report');
+    if (text) {
+      stdout.writeln('┏━━ Reading the import graph');
+      stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under '
+          '${dirs.join(', ')} — nothing to report');
+    } else {
+      // The artifact is the whole of stdout, so the sentence goes elsewhere —
+      // and the artifact is still written, empty: `| jq .` on nothing fails,
+      // on a report with no files it does not.
+      stderr.writeln('No Dart files under ${dirs.join(', ')} — nothing to '
+          'report.');
+      const empty = ImportGraph({});
+      final document = reportJson(
+        empty,
+        packageName: packageName,
+        files: const [],
+        cycles: const [],
+        unreachable: const [],
+        featureDepth: featureDepth,
+      );
+      stdout.write(switch (format) {
+        'json' => '${const JsonEncoder.withIndent('  ').convert(document)}\n',
+        'dot' => toDot(empty, nodes: const [], cycles: const []),
+        _ => toMermaid(empty, nodes: const [], cycles: const []),
+      });
+    }
     if (failOnFindings) {
       stderr.writeln('🚨 --exit-if-changed with nothing to check. '
           'Run from the project root.');
@@ -591,10 +715,108 @@ int _report(
           scopeMatchers.any((m) => m.hasMatch(absolutes[path]!))) &&
       !ignoreMatchers.any((m) => m.hasMatch('/$path'));
 
-  final groups = graph.cycles().where((g) => g.any(inScope)).toList();
+  final scope = directives.keys.where(inScope).toList();
+  // Tarjan runs once: the drawings colour every cycle, the text lists the
+  // groups that touch the scope.
+  final cycles = graph.cycles();
+  final groups = cycles.where((g) => g.any(inScope)).toList();
   final dead = graph.unreachable(roots: roots).where(inScope).toList();
 
-  stdout.writeln('┏━━ Reading the import graph of ${directives.length} files');
+  // The same directives, read against pubspec.yaml. A directory with a
+  // pubspec of its own — a sub-package, an example app — answers to that one.
+  final audit = auditDependencies(
+    pubspec,
+    directivesByFile: directives,
+    ignored: ignoredDependencies,
+    otherPackages: [
+      ...packages.keys,
+      for (final dir in files.reportDirectories)
+        if (File('$currentPath/$dir/pubspec.yaml').existsSync()) dir,
+    ],
+  );
+  // A pattern narrows the files printed: a dev-only package is reported where
+  // an in-scope file imports it. An unused dependency has no file to narrow
+  // by — it belongs to the package — so it is always reported.
+  final dependencies = DependencyAudit(audit.unused, {
+    for (final entry in audit.devOnly.entries)
+      if (entry.value.any(inScope))
+        entry.key: entry.value.where(inScope).toList(),
+  });
+
+  final findings = groups.length + dead.length + dependencies.findings;
+
+  // A drawing is of the library — what the architecture is made of. Tests,
+  // tools and examples still count as importers above; drawn, they would bury
+  // it.
+  final drawn = scope.where(graph.isLibraryFile);
+  switch (format) {
+    case 'json':
+      stdout.writeln(const JsonEncoder.withIndent('  ').convert(reportJson(
+        graph,
+        packageName: packageName,
+        files: scope,
+        cycles: groups,
+        unreachable: dead,
+        featureDepth: featureDepth,
+        dependencies: dependencies.toJson(),
+      )));
+    case 'dot':
+      stdout.write(toDot(
+        graph,
+        nodes: drawn,
+        unreachable: dead.toSet(),
+        featureDepth: featureDepth,
+        cycles: cycles,
+      ));
+    case 'mermaid':
+      final edges = drawnEdges(graph, drawn);
+      if (edges > mermaidEdgeLimit) {
+        stderr.writeln('Warning: $edges edges is past the $mermaidEdgeLimit '
+            'Mermaid draws by default — GitHub shows an error box instead of '
+            'the diagram. Narrow it with a pattern (e.g. "lib/features/auth/"), '
+            'or use --format=dot.');
+      }
+      stdout.write(toMermaid(
+        graph,
+        nodes: drawn,
+        unreachable: dead.toSet(),
+        featureDepth: featureDepth,
+        cycles: cycles,
+      ));
+    default:
+      _printReport(
+        graph,
+        files: directives.length,
+        groups: groups,
+        dead: dead,
+        dependencies: dependencies,
+        scope: scope,
+        featureDepth: featureDepth,
+        findings: findings,
+      );
+  }
+
+  if (failOnFindings && findings > 0) {
+    stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
+        'in the imports. Failing because --exit-if-changed was passed.');
+    return 1;
+  }
+  return 0;
+}
+
+/// The text form of `--report`: findings first, then what the graph says
+/// about the shape of the code.
+void _printReport(
+  ImportGraph graph, {
+  required int files,
+  required List<List<String>> groups,
+  required List<String> dead,
+  required DependencyAudit dependencies,
+  required List<String> scope,
+  required int featureDepth,
+  required int findings,
+}) {
+  stdout.writeln('┏━━ Reading the import graph of $files files');
 
   if (groups.isEmpty) {
     stdout.writeln('┃  ${'✔'.green()} No import cycles');
@@ -623,16 +845,120 @@ int _report(
         'invisible here — read before deleting)');
   }
 
-  final findings = groups.length + dead.length;
-  stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
-      '$findings ${findings == 1 ? 'finding' : 'findings'}');
-
-  if (failOnFindings && findings > 0) {
-    stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
-        'in the import graph. Failing because --exit-if-changed was passed.');
-    return 1;
+  final unused = dependencies.unused;
+  final devOnly = dependencies.devOnly;
+  if (unused.isEmpty && devOnly.isEmpty) {
+    stdout.writeln('┃  ${'✔'.green()} pubspec.yaml agrees with the imports');
   }
-  return 0;
+  if (unused.isNotEmpty) {
+    stdout.writeln('┃  ${'!'.yellow()} ${unused.length} '
+        '${unused.length == 1 ? 'dependency' : 'dependencies'} in pubspec.yaml '
+        'nothing imports:');
+    for (final package in unused) {
+      stdout.writeln('┃     $package');
+    }
+    stdout.writeln('┃     (a font, a code generator or a platform plugin is '
+        'used without an import — keep it with ignored_dependencies)');
+  }
+  if (devOnly.isNotEmpty) {
+    stdout.writeln('┃  ${'✖'.red()} ${devOnly.length} '
+        '${devOnly.length == 1 ? 'package' : 'packages'} imported under lib/, '
+        'bin/ or hook/ but declared only in dev_dependencies:');
+    for (final entry in devOnly.entries) {
+      final shown = entry.value.take(3).join(', ');
+      final more =
+          entry.value.length > 3 ? ' (+${entry.value.length - 3} more)' : '';
+      stdout.writeln('┃     ${entry.key} — $shown$more');
+    }
+    stdout.writeln('┃     (it builds here, where dev dependencies resolve; '
+        'nobody who depends on this package can — move it to dependencies)');
+  }
+
+  _printMetrics(graph, scope: scope, depth: featureDepth);
+
+  // An unused dependency is said, but it is a warning: it never fails
+  // --exit-if-changed, since a font or a plugin is used without an import.
+  final warnings = unused.length;
+  stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
+      '$findings ${findings == 1 ? 'finding' : 'findings'}'
+      '${warnings == 0 ? '' : ', $warnings ${warnings == 1 ? 'warning' : 'warnings'}'}');
+}
+
+/// The ranked lists and the feature coupling. Informational: none of it is a
+/// finding, so none of it fails `--exit-if-changed`.
+void _printMetrics(
+  ImportGraph graph, {
+  required List<String> scope,
+  required int depth,
+}) {
+  const top = 5;
+  final inScope = scope.toSet();
+
+  void list(String title, Map<String, int> counts) {
+    final shown = ranked(counts, scope: inScope, top: top);
+    if (shown.isEmpty) return;
+    final width = '${shown.first.value}'.length;
+    stdout.writeln('┃  $title');
+    for (final entry in shown) {
+      stdout.writeln('┃     ${'${entry.value}'.padLeft(width)}  ${entry.key}');
+    }
+  }
+
+  list('Most imported:', graph.fanIn());
+  list('Imports the most:', graph.fanOut());
+
+  final features = graph.features(depth);
+  if (features.length > 1) {
+    // A large app has dozens of features; the ones that matter here are the
+    // most coupled, and the JSON format lists every one.
+    const shownFeatures = 10;
+    final shown = features.length <= shownFeatures
+        ? features
+        : ((features.toList()
+              ..sort((a, b) =>
+                  (b.afferent + b.efferent).compareTo(a.afferent + a.efferent)))
+            .take(shownFeatures)
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name)));
+    final width = shown.map((f) => f.name.length).reduce(max);
+    stdout.writeln('┃  Features at feature_depth $depth — files, imports in '
+        'and out, instability:');
+    for (final feature in shown) {
+      final instability = feature.instability?.toStringAsFixed(2) ?? '—';
+      stdout.writeln('┃     ${feature.name.padRight(width)}  '
+          '${'${feature.files}'.padLeft(4)} files  '
+          'in ${'${feature.afferent}'.padLeft(3)}  '
+          'out ${'${feature.efferent}'.padLeft(3)}  I $instability');
+    }
+    if (shown.length < features.length) {
+      stdout.writeln('┃     (+${features.length - shown.length} less coupled '
+          '— --format=json lists every feature)');
+    }
+
+    final pairs = graph.coupling(depth).take(top).toList();
+    if (pairs.isNotEmpty) {
+      stdout.writeln('┃  Strongest coupling:');
+      for (final pair in pairs) {
+        stdout.writeln('┃     ${pair.from} → ${pair.to}  '
+            '(${pair.edges} ${pair.edges == 1 ? 'import' : 'imports'})');
+      }
+    }
+  }
+
+  // One folder holding most of lib/ means the depth is one short of the
+  // layout: `lib/features/<name>/` is a single feature called `features` at 1.
+  final total = features.fold<int>(0, (sum, f) => sum + f.files);
+  if (total >= 10 && features.isNotEmpty) {
+    final biggest = features.reduce((a, b) => b.files > a.files ? b : a);
+    final splits = graph.edges.keys.any((file) =>
+        graph.featureOf(file, depth) == biggest.name &&
+        graph.featureOf(file, depth + 1) != biggest.name);
+    if (biggest.files / total > 0.6 && splits) {
+      stdout.writeln('┃  • ${(100 * biggest.files / total).round()}% of the '
+          'library sits in ${biggest.name} — feature_depth: ${depth + 1} '
+          'splits it');
+    }
+  }
 }
 
 /// Every sub-package under `packages/`, as directory -> name, read from each
@@ -640,15 +966,13 @@ int _report(
 /// resolved, and its cycles and dead files were silently invisible.
 Map<String, String> _subPackages(String currentPath) {
   final found = <String, String>{};
-  final root = Directory('$currentPath/packages');
-  if (!root.existsSync()) return found;
-
-  for (final entity in root.listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('pubspec.yaml')) continue;
+  // The sorter's own walk: a `listSync(recursive: true)` here followed links,
+  // so a Flutter app's `.plugin_symlinks/` took the report into the pub cache.
+  for (final entity
+      in files.filesNamed(currentPath, 'packages', 'pubspec.yaml')) {
     final dir = files
         .toPosix(entity.parent.path.replaceFirst(currentPath, ''))
         .replaceFirst(RegExp('^/'), '');
-    if (dir.contains('/.') || dir.contains('/build/')) continue;
     try {
       final name = (loadYaml(entity.readAsStringSync()) as YamlMap?)?['name'];
       if (name is String) found[dir] = name;
@@ -657,4 +981,265 @@ Map<String, String> _subPackages(String currentPath) {
     }
   }
   return found;
+}
+
+/// Says whether the configuration agrees with the lints in force, and with
+/// `dart format`, and — under [apply] — writes the keys that make it agree.
+///
+/// Returns the exit code: 1 under [failOnFindings] while a conflict or a fight
+/// is left standing, 0 otherwise.
+///
+/// Every flag in this tool used to be something the user had to know to look
+/// for: `--flat` exists because of `directives_ordering`, and nothing said so
+/// to someone who had that lint on. This reads `analysis_options.yaml` — the
+/// nearest one, as the analyzer does, following its `include:` chain — and
+/// says it.
+int _doctor(
+  String currentPath,
+  TidyConfig config, {
+  required bool apply,
+  required bool readOnly,
+  required bool failOnFindings,
+}) {
+  final options = _findUp(currentPath, 'analysis_options.yaml');
+  final packageDirs = _packageDirs(currentPath);
+  final lints = options == null
+      ? const LintState({})
+      : readLints(
+          files.toPosix(options.path),
+          read: (path) {
+            try {
+              final file = File(path);
+              return file.existsSync() ? file.readAsStringSync() : null;
+            } on FileSystemException {
+              return null;
+            }
+          },
+          packageDir: (name) => packageDirs[name],
+        );
+
+  final findings = diagnose(
+    lints,
+    config,
+    formatterSeparates: _formatterSeparates(Platform.version),
+  );
+
+  final shown = options == null
+      ? 'analysis_options.yaml'
+      : files
+          .toPosix(options.path.replaceFirst(currentPath, ''))
+          .replaceFirst(RegExp('^/'), '');
+  stdout.writeln('┏━━ Checking the tidy_imports configuration against $shown');
+
+  if (options == null) {
+    stdout.writeln('┃  • No analysis_options.yaml here or above — no lint to '
+        'agree with');
+  } else {
+    final inForce = importLints.where(lints.has).toList();
+    stdout.writeln(inForce.isEmpty
+        ? '┃  ${'✔'.green()} None of ${importLints.join(', ')} is on'
+        : '┃  Lints that read imports: ${inForce.join(', ')}');
+  }
+  for (final problem in lints.problems) {
+    _say('${'!'.yellow()} $problem');
+  }
+
+  for (final finding in findings) {
+    final mark = switch (finding.kind) {
+      FindingKind.conflict || FindingKind.fight => '✖'.red(),
+      FindingKind.suggestion => '!'.yellow(),
+      FindingKind.note => '•',
+    };
+    _say('$mark ${finding.message}');
+    if (finding.fix.isNotEmpty) {
+      stdout.writeln('┃      → ${_describe(finding.fix)}');
+    }
+  }
+
+  int count(FindingKind kind) => findings.where((f) => f.kind == kind).length;
+  final conflicts = count(FindingKind.conflict);
+  final fights = count(FindingKind.fight);
+  final suggestions = count(FindingKind.suggestion);
+  final tally = [
+    if (conflicts > 0) _plural(conflicts, 'conflict'),
+    if (fights > 0) _plural(fights, 'fight'),
+    if (suggestions > 0) _plural(suggestions, 'suggestion'),
+  ];
+  stdout.writeln(tally.isEmpty
+      ? '┗━━ ${'✔'.green()} Nothing to change'
+      : '┗━━ ${conflicts + fights > 0 ? '✖'.red() : '!'.yellow()} '
+          '${tally.join(', ')}');
+
+  final fixes = fixesOf(findings);
+  var fixed = false;
+  if (fixes.isNotEmpty) {
+    final standaloneFile = File('$currentPath/tidy_imports.yaml');
+    final standalone = standaloneFile.existsSync();
+    final target =
+        standalone ? standaloneFile : File('$currentPath/pubspec.yaml');
+    final name = standalone ? 'tidy_imports.yaml' : 'pubspec.yaml';
+
+    if (apply) {
+      fixed = _applyFixes(target, name, fixes,
+          standalone: standalone, readOnly: readOnly);
+    } else {
+      final where = standalone ? name : 'the tidy_imports: block of $name';
+      stdout.writeln('\nAdd to $where — or run again with --apply:\n');
+      stdout.writeln(_snippet(fixes, wrapped: !standalone));
+    }
+  }
+
+  final standing = conflicts + (fixed ? 0 : fights);
+  if (failOnFindings && standing > 0) {
+    stderr.writeln('\n🚨 ${_plural(standing, 'problem')} between the '
+        'configuration and the toolchain. Failing because --exit-if-changed '
+        'was passed.');
+    return 1;
+  }
+  return 0;
+}
+
+/// Writes [fixes] into [target], or says why it did not. Returns whether the
+/// file now says what [fixes] says.
+///
+/// The edit is checked before it is written: the new text is parsed back and
+/// every key must read as the value that was meant. A line editor that
+/// guessed wrong on a hand-written file must cost a snippet, never a pubspec.
+bool _applyFixes(
+  File target,
+  String name,
+  Map<String, Object> fixes, {
+  required bool standalone,
+  required bool readOnly,
+}) {
+  final String original;
+  try {
+    original = target.readAsStringSync();
+  } on FileSystemException catch (e) {
+    stderr.writeln('Error: could not read $name: '
+        '${e.osError?.message ?? e.message}');
+    return false;
+  }
+
+  final edited = setConfigKeys(original, fixes, standalone: standalone);
+  if (edited == null || !_says(edited, fixes, standalone: standalone)) {
+    stdout.writeln('\n${'!'.yellow()} $name is laid out in a way --apply '
+        'will not edit by guesswork. Add this by hand:\n');
+    stdout.writeln(_snippet(fixes, wrapped: !standalone));
+    return false;
+  }
+
+  if (readOnly) {
+    stdout.writeln('\n• Would write ${_describe(fixes)} to $name '
+        '(read-only run — nothing written)');
+    return false;
+  }
+  target.writeAsStringSync(edited);
+  stdout.writeln('\n${'✔'.green()} Wrote ${_describe(fixes)} to $name');
+  return true;
+}
+
+/// Whether [text] parses and its tidy_imports options include every entry of
+/// [fixes].
+bool _says(String text, Map<String, Object> fixes, {required bool standalone}) {
+  try {
+    final document = loadYaml(text);
+    if (document is! YamlMap) return false;
+    final wrapped = document['tidy_imports'];
+    final block = standalone && !(document.length == 1 && wrapped is YamlMap)
+        ? document
+        : wrapped;
+    return block is YamlMap &&
+        fixes.entries.every((entry) => block[entry.key] == entry.value);
+  } on Object {
+    return false;
+  }
+}
+
+/// `flat: true, sort_exports: true`.
+String _describe(Map<String, Object> fixes) =>
+    fixes.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+
+/// [fixes] as YAML to paste.
+String _snippet(Map<String, Object> fixes, {required bool wrapped}) => [
+      if (wrapped) 'tidy_imports:',
+      for (final entry in fixes.entries)
+        '${wrapped ? '  ' : ''}${entry.key}: ${entry.value}',
+    ].join('\n');
+
+String _plural(int count, String noun) =>
+    '$count $noun${count == 1 ? '' : 's'}';
+
+/// Prints [text] under the report's left rule, wrapped so a sentence stays
+/// readable in an 80-column terminal.
+void _say(String text) {
+  const width = 72;
+  var line = '';
+  var first = true;
+  for (final word in text.split(' ')) {
+    if (line.isNotEmpty && line.length + 1 + word.length > width) {
+      stdout.writeln('┃  ${first ? '' : '  '}$line');
+      first = false;
+      line = word;
+    } else {
+      line = line.isEmpty ? word : '$line $word';
+    }
+  }
+  if (line.isNotEmpty) stdout.writeln('┃  ${first ? '' : '  '}$line');
+}
+
+/// Whether the `dart format` of the SDK [version] (`3.13.1 (stable) …`)
+/// writes a blank line between `package:` and relative imports on its own.
+bool _formatterSeparates(String version) {
+  final match = RegExp(r'^(\d+)\.(\d+)').firstMatch(version);
+  if (match == null) return false;
+  final major = int.parse(match.group(1)!);
+  final minor = int.parse(match.group(2)!);
+  return major > 3 || (major == 3 && minor >= 13);
+}
+
+/// The nearest [relative] file at [start] or above it, the way the analyzer
+/// finds `analysis_options.yaml` and pub finds a workspace's package config.
+File? _findUp(String start, String relative) {
+  var dir = Directory(start).absolute;
+  while (true) {
+    final file = File('${dir.path}/$relative');
+    if (file.existsSync()) return file;
+    final parent = dir.parent;
+    if (parent.path == dir.path) return null;
+    dir = parent;
+  }
+}
+
+/// Every resolved package, as name -> the directory its `package:` URIs start
+/// in, read from the nearest `.dart_tool/package_config.json`. Empty when
+/// there is none — `dart pub get` has not run — or it does not parse.
+Map<String, String> _packageDirs(String currentPath) {
+  final configFile = _findUp(currentPath, '.dart_tool/package_config.json');
+  if (configFile == null) return const {};
+  try {
+    final json = jsonDecode(configFile.readAsStringSync());
+    final packages = json is Map ? json['packages'] : null;
+    if (packages is! List) return const {};
+
+    final base =
+        Uri.directory(configFile.parent.path, windows: Platform.isWindows);
+    final dirs = <String, String>{};
+    for (final package in packages) {
+      if (package is! Map) continue;
+      final name = package['name'];
+      final root = package['rootUri'];
+      final lib = package['packageUri'];
+      if (name is! String || root is! String) continue;
+      final uri = base
+          .resolve(root.endsWith('/') ? root : '$root/')
+          .resolve(lib is String ? lib : '');
+      dirs[name] = files
+          .toPosix(uri.toFilePath(windows: Platform.isWindows))
+          .replaceFirst(RegExp(r'/$'), '');
+    }
+    return dirs;
+  } on Object {
+    return const {};
+  }
 }

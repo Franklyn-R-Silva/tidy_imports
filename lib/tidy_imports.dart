@@ -19,14 +19,36 @@
 library;
 
 export 'config.dart' show TidyConfig, CustomTier;
+export 'config_edit.dart' show setConfigKeys;
+export 'dependencies.dart'
+    show DependencyAudit, auditDependencies, usedWithoutImport;
+export 'doctor.dart'
+    show
+        DoctorFinding,
+        FindingKind,
+        LintState,
+        diagnose,
+        fixesOf,
+        importLints,
+        readLints;
 export 'src/version.dart' show packageVersion, packageName;
-export 'graph.dart' show ImportGraph, resolveUri;
+export 'graph.dart' show Coupling, FeatureMetrics, ImportGraph, resolveUri;
+export 'graph_export.dart'
+    show
+        drawnEdges,
+        mermaidEdgeLimit,
+        ranked,
+        reportJson,
+        reportSchemaVersion,
+        toDot,
+        toMermaid;
 export 'sort.dart'
     show declaresMain, directiveUris, sortImports, ImportSortData;
 export 'files.dart'
     show
         compilePatterns,
         dartFiles,
+        filesNamed,
         reportDirectories,
         standardDirectories,
         toPosix;

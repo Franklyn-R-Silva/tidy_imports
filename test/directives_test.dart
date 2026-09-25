@@ -343,6 +343,115 @@ void main() {}
     });
   });
 
+  group('block comments inside a directive', () {
+    test('a block comment after the semicolon keeps it a directive', () {
+      // The terminator test looked at the last character of the line, which
+      // here is `/`: the import never ended, and slid out of the block.
+      final result = sortImports(
+        [
+          "import 'package:demo/z.dart'; /* why z */",
+          "import 'dart:io';",
+          '',
+          'void main() {}',
+        ],
+        'demo',
+        false,
+        false,
+        false,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart'; /* why z */
+
+void main() {}
+''',
+      );
+    });
+
+    test('a block comment still open at the semicolon travels whole', () {
+      final result = sortImports(
+        [
+          "import 'package:demo/z.dart'; /* a note",
+          '   that goes on */',
+          "import 'dart:io';",
+          '',
+          'void main() {}',
+        ],
+        'demo',
+        false,
+        false,
+        false,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart'; /* a note
+   that goes on */
+
+void main() {}
+''',
+        reason: 'leaving the tail behind would turn `that goes on */` into '
+            'code',
+      );
+    });
+
+    test('a path quoted in a block comment is not rewritten', () {
+      final result = sortImports(
+        ["import 'b.dart' /* was 'gone.dart' */;", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+        packageImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("import 'package:demo/b.dart' /* was 'gone.dart' */;"),
+      );
+    });
+
+    test('a path quoted in a block comment is not a graph edge', () {
+      expect(
+        directiveUris([
+          "import 'a.dart' /* was 'b.dart' */;",
+          "import 'c.dart' /* see",
+          "    'd.dart' */ show C;",
+        ]),
+        ['a.dart', 'c.dart'],
+      );
+    });
+
+    test('an apostrophe inside a double-quoted uri is part of it', () {
+      expect(directiveUris(['import "it\'s.dart";']), ["it's.dart"]);
+
+      final result = sortImports(
+        ['import "it\'s.dart";', "import 'b.dart';", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+      );
+      expect(
+        result.sortedFile,
+        startsWith('import \'b.dart\';\nimport "it\'s.dart";\n'),
+        reason: "sorted by it's.dart, not by a truncated `it`",
+      );
+    });
+  });
+
   group('leading // ignore: pragmas', () {
     test('an // ignore: pragma travels with its import', () {
       final lines = [
@@ -1609,6 +1718,263 @@ void main() {}
       );
 
       expect(result.duplicatesRemoved, 1);
+    });
+
+    test('rewrites a uri written on the line after the keyword', () {
+      // The text used to keep the package: uri while the sort key became the
+      // relative one, so the import was filed among the relative imports.
+      final lines = [
+        "import 'package:http/http.dart';",
+        'import',
+        "    'package:demo/src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        "import 'package:http/http.dart';\n"
+        '\n'
+        'import\n'
+        "    'src/foo.dart';\n"
+        '\n'
+        'void main() {}\n',
+      );
+    });
+
+    test('rewrites every target of a conditional import', () {
+      final lines = [
+        "import 'package:demo/src/stub.dart'",
+        "    if (dart.library.io) 'package:demo/src/io.dart'",
+        "    if (dart.library.js_interop) 'package:demo/src/web.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith(
+          "import 'src/stub.dart'\n"
+          "    if (dart.library.io) 'src/io.dart'\n"
+          "    if (dart.library.js_interop) 'src/web.dart';\n",
+        ),
+      );
+    });
+
+    test('refuses to run beside --package-imports', () {
+      expect(
+        () => sortImports(
+          ["import 'a.dart';"],
+          'demo',
+          false,
+          false,
+          true,
+          relativeImports: true,
+          packageImports: true,
+          libRelativePath: 'b.dart',
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('never rewrites a uri quoted in the trailing comment', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart'; // was 'package:demo/old.dart'",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("import 'src/foo.dart'; // was 'package:demo/old.dart'"),
+      );
+    });
+  });
+
+  group('package imports (--package-imports)', () {
+    String sortPackaged(List<String> lines, String from) => sortImports(
+          [...lines, '', 'void main() {}'],
+          'demo',
+          false,
+          false,
+          true,
+          packageImports: true,
+          libRelativePath: from,
+        ).sortedFile;
+
+    test('is off by default', () {
+      final result = sortImports(
+        ["import 'src/foo.dart';", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(result.sortedFile, startsWith("import 'src/foo.dart';"));
+    });
+
+    test('rewrites a relative uri as a package: uri of this package', () {
+      expect(
+        sortPackaged(["import '../foo.dart';"], 'src/p2/bar.dart'),
+        startsWith("import 'package:demo/src/foo.dart';"),
+      );
+    });
+
+    test('resolves a sibling and a ./ path', () {
+      expect(
+        sortPackaged(
+          ["import './widgets/card.dart';", "import 'theme.dart';"],
+          'features/home/view.dart',
+        ),
+        startsWith(
+          "import 'package:demo/features/home/theme.dart';\n"
+          "import 'package:demo/features/home/widgets/card.dart';\n",
+        ),
+      );
+    });
+
+    test('leaves a uri that climbs out of lib/ as written', () {
+      // `../../test/x.dart` from lib/a.dart is not in any package: form.
+      expect(
+        sortPackaged(["import '../test/fake.dart';"], 'a.dart'),
+        startsWith("import '../test/fake.dart';"),
+      );
+    });
+
+    test('leaves dart:, package: and root-relative uris alone', () {
+      final sorted = sortPackaged(
+        [
+          "import 'dart:io';",
+          "import 'package:http/http.dart';",
+          "import '/features/x.dart';",
+        ],
+        'a.dart',
+      );
+
+      expect(sorted, contains("import 'dart:io';"));
+      expect(sorted, contains("import 'package:http/http.dart';"));
+      expect(sorted, contains("import '/features/x.dart';"));
+    });
+
+    test('does nothing outside lib/', () {
+      final result = sortImports(
+        ["import 'helpers.dart';", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+        packageImports: true,
+      );
+
+      expect(result.sortedFile, startsWith("import 'helpers.dart';"));
+    });
+
+    test('keeps the prefix, the show clause and the trailing comment', () {
+      expect(
+        sortPackaged(
+          ["import 'src/foo.dart' as foo show Foo; // why"],
+          'a.dart',
+        ),
+        startsWith(
+            "import 'package:demo/src/foo.dart' as foo show Foo; // why"),
+      );
+    });
+
+    test('rewrites every target of a conditional import', () {
+      expect(
+        sortPackaged(
+          [
+            "import 'stub.dart'",
+            "    if (dart.library.io) 'io.dart'",
+            "    if (dart.library.js_interop == 'true') 'web.dart';",
+          ],
+          'src/a.dart',
+        ),
+        startsWith(
+          "import 'package:demo/src/stub.dart'\n"
+          "    if (dart.library.io) 'package:demo/src/io.dart'\n"
+          "    if (dart.library.js_interop == 'true') "
+          "'package:demo/src/web.dart';\n",
+        ),
+        reason: "the `== 'true'` value is quoted too, but it is not a path",
+      );
+    });
+
+    test('rewrites a uri written on the line after the keyword', () {
+      expect(
+        sortPackaged(['import', "    '../foo.dart';"], 'src/a.dart'),
+        startsWith("import\n    'package:demo/foo.dart';\n"),
+      );
+    });
+
+    test('a rewritten uri can then be seen as a duplicate', () {
+      final result = sortImports(
+        [
+          "import 'package:demo/src/foo.dart';",
+          "import 'src/foo.dart';",
+          '',
+          'void main() {}',
+        ],
+        'demo',
+        false,
+        false,
+        true,
+        packageImports: true,
+        removeDuplicates: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(result.duplicatesRemoved, 1);
+    });
+
+    test('is stable: a second run changes nothing', () {
+      final once = sortPackaged(
+        ["import '../foo.dart';", "import 'package:http/http.dart';"],
+        'src/a.dart',
+      );
+      final twice = sortImports(
+        const LineSplitter().convert(once),
+        'demo',
+        false,
+        false,
+        true,
+        packageImports: true,
+        libRelativePath: 'src/a.dart',
+      );
+
+      expect(twice.updated, isFalse);
     });
   });
 

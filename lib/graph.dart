@@ -161,6 +161,94 @@ class ImportGraph {
       ..sort();
   }
 
+  /// How many project files depend on each file — its fan-in. Every node is
+  /// a key, so a file nothing imports reads 0.
+  Map<String, int> fanIn() {
+    final counts = {for (final file in edges.keys) file: 0};
+    for (final targets in edges.values) {
+      for (final target in targets) {
+        counts[target] = (counts[target] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// How many project files each file depends on — its fan-out.
+  Map<String, int> fanOut() =>
+      {for (final entry in edges.entries) entry.key: entry.value.length};
+
+  /// The feature [file] belongs to: its directory under `lib/`, cut to
+  /// [depth] folders — or null for a file outside every `lib/`.
+  ///
+  /// `lib/src/` is pub's convention for "private", not a feature, so it is
+  /// looked through: at depth 1 both `lib/auth/x.dart` and
+  /// `lib/src/auth/x.dart` fall in their `auth` folder. A file directly in
+  /// `lib/` (or `lib/src/`) belongs to that directory. The name is the real
+  /// path prefix, so a reader can find it.
+  String? featureOf(String file, int depth) {
+    final root = libraryRoot(file);
+    if (root == null) return null;
+    final dirs = file.substring(root.length).split('/')..removeLast();
+    final skip = dirs.isNotEmpty && dirs.first == 'src' ? 1 : 0;
+    final kept = dirs.take(skip + (depth < 0 ? 0 : depth));
+    return [root.substring(0, root.length - 1), ...kept].join('/');
+  }
+
+  /// Every feature at [depth], with its size and how it couples to the rest,
+  /// sorted by name. Only files under a `lib/` take part, and only edges that
+  /// cross from one feature into another count.
+  List<FeatureMetrics> features(int depth) {
+    final files = <String, int>{};
+    final afferent = <String, int>{};
+    final efferent = <String, int>{};
+    for (final entry in edges.entries) {
+      final from = featureOf(entry.key, depth);
+      if (from == null) continue;
+      files[from] = (files[from] ?? 0) + 1;
+      for (final target in entry.value) {
+        final to = featureOf(target, depth);
+        if (to == null || to == from) continue;
+        efferent[from] = (efferent[from] ?? 0) + 1;
+        afferent[to] = (afferent[to] ?? 0) + 1;
+      }
+    }
+    return [
+      for (final name in files.keys.toList()..sort())
+        FeatureMetrics(
+          name,
+          files: files[name]!,
+          afferent: afferent[name] ?? 0,
+          efferent: efferent[name] ?? 0,
+        ),
+    ];
+  }
+
+  /// Every pair of features at [depth] joined by at least one edge, with the
+  /// number of imports from one into the other — heaviest first.
+  List<Coupling> coupling(int depth) {
+    final counts = <String, Map<String, int>>{};
+    for (final entry in edges.entries) {
+      final from = featureOf(entry.key, depth);
+      if (from == null) continue;
+      for (final target in entry.value) {
+        final to = featureOf(target, depth);
+        if (to == null || to == from) continue;
+        final row = counts.putIfAbsent(from, () => {});
+        row[to] = (row[to] ?? 0) + 1;
+      }
+    }
+    return [
+      for (final from in counts.entries)
+        for (final to in from.value.entries)
+          Coupling(from.key, to.key, to.value),
+    ]..sort((a, b) {
+        final byEdges = b.edges.compareTo(a.edges);
+        if (byEdges != 0) return byEdges;
+        final byFrom = a.from.compareTo(b.from);
+        return byFrom != 0 ? byFrom : a.to.compareTo(b.to);
+      });
+  }
+
   /// Whether [file] sits under the `lib/` of any package in [packages].
   bool isLibraryFile(String file) => libraryRoot(file) != null;
 
@@ -236,6 +324,41 @@ class ImportGraph {
     }
     return components;
   }
+}
+
+/// One feature of the project and how it is coupled to the others.
+///
+/// [afferent] counts the imports reaching in from other features, [efferent]
+/// the imports going out to them — Robert C. Martin's Ca and Ce.
+class FeatureMetrics {
+  final String name;
+  final int files;
+  final int afferent;
+  final int efferent;
+
+  const FeatureMetrics(
+    this.name, {
+    required this.files,
+    required this.afferent,
+    required this.efferent,
+  });
+
+  /// Ce / (Ca + Ce): 0 for a feature everything leans on and that leans on
+  /// nothing, 1 for one that only leans on others. Null when it has no edge
+  /// to any other feature at all.
+  double? get instability {
+    final total = afferent + efferent;
+    return total == 0 ? null : efferent / total;
+  }
+}
+
+/// [edges] imports from files of feature [from] into files of feature [to].
+class Coupling {
+  final String from;
+  final String to;
+  final int edges;
+
+  const Coupling(this.from, this.to, this.edges);
 }
 
 /// One node on Tarjan's explicit stack: the node, its children in a fixed

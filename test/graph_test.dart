@@ -1,8 +1,12 @@
+// Dart imports:
+import 'dart:convert';
+
 // Package imports:
 import 'package:test/test.dart';
 
 // Project imports:
 import 'package:tidy_imports/graph.dart';
+import 'package:tidy_imports/graph_export.dart';
 import 'package:tidy_imports/sort.dart';
 
 void main() {
@@ -409,6 +413,246 @@ void main() {
       ]);
 
       expect(uris, ['real.dart']);
+    });
+  });
+
+  group('metrics', () {
+    // lib/features/auth and lib/features/home both lean on lib/core; home
+    // also reaches into auth. test/ imports home, which counts as fan-in but
+    // takes no part in feature coupling.
+    final graph = ImportGraph.build(
+      {
+        'lib/core/theme.dart': [],
+        'lib/core/api.dart': ['theme.dart'],
+        'lib/features/auth/login.dart': [
+          'package:app/core/api.dart',
+          'package:app/core/theme.dart',
+        ],
+        'lib/features/home/home.dart': [
+          'package:app/core/theme.dart',
+          '../auth/login.dart',
+        ],
+        'lib/src/util.dart': [],
+        'lib/main.dart': ['features/home/home.dart', 'src/util.dart'],
+        'test/home_test.dart': ['package:app/features/home/home.dart'],
+      },
+      'app',
+    );
+
+    test('fan-in counts every importer, tests included', () {
+      final fanIn = graph.fanIn();
+
+      expect(fanIn['lib/core/theme.dart'], 3);
+      expect(fanIn['lib/features/home/home.dart'], 2);
+      expect(fanIn['lib/main.dart'], 0);
+    });
+
+    test('fan-out counts distinct project imports', () {
+      expect(graph.fanOut()['lib/features/auth/login.dart'], 2);
+      expect(graph.fanOut()['lib/core/theme.dart'], 0);
+    });
+
+    test('featureOf cuts the path under lib/ to the depth', () {
+      expect(
+        graph.featureOf('lib/features/auth/login.dart', 1),
+        'lib/features',
+      );
+      expect(
+        graph.featureOf('lib/features/auth/login.dart', 2),
+        'lib/features/auth',
+      );
+      expect(graph.featureOf('lib/main.dart', 1), 'lib');
+      expect(graph.featureOf('test/home_test.dart', 1), isNull);
+    });
+
+    test('featureOf looks through lib/src/', () {
+      expect(graph.featureOf('lib/src/auth/x.dart', 1), 'lib/src/auth');
+      expect(graph.featureOf('lib/src/util.dart', 1), 'lib/src');
+    });
+
+    test('featureOf names a sub-package feature by its real path', () {
+      const monorepo = ImportGraph(
+        {'packages/core/lib/net/http.dart': {}},
+        packages: {'': 'app', 'packages/core': 'core'},
+      );
+
+      expect(
+        monorepo.featureOf('packages/core/lib/net/http.dart', 1),
+        'packages/core/lib/net',
+      );
+    });
+
+    test('features count crossing imports as afferent and efferent', () {
+      final features = {for (final f in graph.features(2)) f.name: f};
+
+      final core = features['lib/core']!;
+      expect(core.files, 2);
+      expect(core.afferent, 3, reason: 'auth twice, home once');
+      expect(core.efferent, 0);
+      expect(core.instability, 0);
+
+      final home = features['lib/features/home']!;
+      expect(home.afferent, 1, reason: 'main; the test is not a feature');
+      expect(home.efferent, 2);
+      expect(home.instability, closeTo(2 / 3, 1e-9));
+    });
+
+    test('a feature with no crossing edge has no instability', () {
+      const lonely = ImportGraph({'lib/a/x.dart': {}});
+
+      expect(lonely.features(1).single.instability, isNull);
+    });
+
+    test('coupling lists feature pairs, heaviest first', () {
+      final pairs = graph.coupling(2);
+
+      expect(pairs.first.from, 'lib/features/auth');
+      expect(pairs.first.to, 'lib/core');
+      expect(pairs.first.edges, 2);
+      expect(
+        pairs.map((p) => '${p.from}>${p.to}'),
+        containsAll([
+          'lib/features/home>lib/core',
+          'lib/features/home>lib/features/auth',
+          'lib>lib/features/home',
+          'lib>lib/src',
+        ]),
+      );
+    });
+  });
+
+  group('exports', () {
+    final graph = ImportGraph.build(
+      {
+        'lib/a/x.dart': ['../b/y.dart'],
+        'lib/b/y.dart': ['../a/x.dart', 'z.dart'],
+        'lib/b/z.dart': [],
+        'lib/dead.dart': [],
+      },
+      'app',
+    );
+    final nodes = graph.edges.keys;
+
+    test('Mermaid boxes features, reds cycles and dashes dead files', () {
+      expect(
+        toMermaid(graph, nodes: nodes, unreachable: {'lib/dead.dart'}),
+        'flowchart LR\n'
+        '  subgraph f0["lib"]\n'
+        '    n3["dead.dart"]\n'
+        '  end\n'
+        '  subgraph f1["lib/a"]\n'
+        '    n0["x.dart"]\n'
+        '  end\n'
+        '  subgraph f2["lib/b"]\n'
+        '    n1["y.dart"]\n'
+        '    n2["z.dart"]\n'
+        '  end\n'
+        '  n0 --> n1\n'
+        '  n1 --> n0\n'
+        '  n1 --> n2\n'
+        '  linkStyle 0,1 stroke:#d33,stroke-width:2px\n'
+        '  classDef dead stroke-dasharray:4 4,color:#888\n'
+        '  class n3 dead\n',
+      );
+    });
+
+    test('Mermaid draws only the nodes asked for, and their edges', () {
+      final drawn = toMermaid(graph, nodes: ['lib/b/y.dart', 'lib/b/z.dart']);
+
+      expect(drawn, contains('n0 --> n1'));
+      expect(drawn, isNot(contains('x.dart')));
+      expect(drawnEdges(graph, ['lib/b/y.dart', 'lib/b/z.dart']), 1);
+    });
+
+    test('Mermaid escapes a quote in a label', () {
+      const quoted = ImportGraph({'lib/say "hi".dart': {}});
+
+      expect(
+        toMermaid(quoted, nodes: quoted.edges.keys),
+        contains('["say #quot;hi#quot;.dart"]'),
+      );
+    });
+
+    test('DOT clusters features and colours cycle edges', () {
+      final dot = toDot(graph, nodes: nodes, unreachable: {'lib/dead.dart'});
+
+      expect(dot, startsWith('digraph imports {\n  rankdir=LR;\n'));
+      expect(dot, contains('subgraph "cluster_2" {\n    label="lib/b";\n'));
+      expect(
+        dot,
+        contains(
+          '"lib/a/x.dart" -> "lib/b/y.dart" [color="#dd3333", penwidth=2];',
+        ),
+      );
+      expect(dot, contains('"lib/b/y.dart" -> "lib/b/z.dart";'));
+      expect(
+        dot,
+        contains('"lib/dead.dart" [label="dead.dart", '
+            'style="rounded,dashed", fontcolor="#888888"];'),
+      );
+      expect(dot.trimRight(), endsWith('}'));
+    });
+
+    test('DOT escapes quotes and backslashes', () {
+      const odd = ImportGraph({r'lib/a"b\c.dart': {}});
+
+      expect(
+        toDot(odd, nodes: odd.edges.keys),
+        contains(r'"lib/a\"b\\c.dart"'),
+      );
+    });
+
+    test('JSON carries files, cycles, metrics and a schema version', () {
+      final report = jsonDecode(
+        jsonEncode(
+          reportJson(
+            graph,
+            packageName: 'app',
+            files: nodes,
+            cycles: graph.cycles(),
+            unreachable: ['lib/dead.dart'],
+          ),
+        ),
+      ) as Map<String, Object?>;
+
+      expect(report['schemaVersion'], reportSchemaVersion);
+      expect(report['package'], 'app');
+      expect(report['cycles'], [
+        ['lib/a/x.dart', 'lib/b/y.dart'],
+      ]);
+      expect(report['unreachable'], ['lib/dead.dart']);
+      expect(report.containsKey('dependencies'), isFalse);
+
+      final files = (report['files'] as List).cast<Map<String, Object?>>();
+      final y = files.firstWhere((f) => f['path'] == 'lib/b/y.dart');
+      expect(y['imports'], ['lib/a/x.dart', 'lib/b/z.dart']);
+      expect(y['importedBy'], 1);
+      expect(y['feature'], 'lib/b');
+      expect(y['cycle'], 0);
+      expect(
+        files.firstWhere((f) => f['path'] == 'lib/b/z.dart')['cycle'],
+        isNull,
+      );
+
+      final metrics = report['metrics'] as Map<String, Object?>;
+      expect(
+        (metrics['mostImported'] as List).first,
+        {'path': 'lib/a/x.dart', 'count': 1},
+      );
+      expect(metrics['features'] as List, hasLength(3));
+    });
+
+    test('JSON lists only the files in scope', () {
+      final report = reportJson(
+        graph,
+        packageName: 'app',
+        files: ['lib/b/z.dart'],
+        cycles: const [],
+        unreachable: ['lib/dead.dart'],
+      );
+
+      expect(report['files'] as List, hasLength(1));
+      expect(report['unreachable'], isEmpty);
     });
   });
 }
