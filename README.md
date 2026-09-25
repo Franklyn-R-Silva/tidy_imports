@@ -22,137 +22,68 @@ Spiritual successor to [import_sorter](https://github.com/fluttercommunity/impor
 rebuilt for Dart 3+ with bug fixes, new flags, custom import tiers, `pubspec.yaml`
 sorting, and monorepo support.
 
-## Why use tidy_imports?
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/screenshots/demo.gif" alt="tidy_imports turning a jumbled import list into labelled, sorted groups" width="720">
+</p>
 
-### The short answer, for anyone
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#agree-with-your-lints">Lints</a> ·
+  <a href="#see-your-architecture">Import graph</a> ·
+  <a href="#ci">CI</a> ·
+  <a href="https://github.com/Franklyn-R-Silva/tidy_imports/tree/main/docs">Documentation</a> ·
+  <a href="https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/CHANGELOG.md">Changelog</a>
+</p>
 
-Every Dart file opens with a list of `import` lines — the file saying which
-other files it needs in order to work. Nothing in Dart decides what order that
-list goes in, so it ends up in the order things happened to be typed, which is
-no order at all.
+## Features
 
-Think of it as the shelf of tools at the top of the file. Left alone, a shelf
-becomes a drawer: everything is in there, nothing is findable, and everyone who
-opens it puts things back somewhere new.
+- **Sorted and grouped, the same way on every machine** — Dart, Flutter,
+  packages, your own project, each under a label. One command;
+  `--exit-if-changed` holds the line in CI.
+- **Agrees with your toolchain instead of fighting it** — writes the blank line
+  `dart format` 3.13+ writes, and [`--doctor`](#agree-with-your-lints) reads your
+  `analysis_options.yaml` to tell you which options your lints need.
+- **Every lint's shape** — `--flat` for `directives_ordering`,
+  `--relative-imports` for `prefer_relative_imports`, `--package-imports` for
+  `always_use_package_imports`.
+- **A picture of your architecture** — [`--report`](#see-your-architecture)
+  finds import cycles, dead files and coupling between features, and draws it
+  all as Mermaid, DOT or JSON.
+- **Your `pubspec.yaml`, checked against your imports** — dependencies nothing
+  imports, and dev dependencies your `lib/` quietly ships.
+- **Safe on real files** — wrapped `show` clauses, conditional imports,
+  `// ignore:` pragmas, trailing comments, imports inside strings or `/* */`:
+  every shape that broke a line-based sorter has a test here.
+- **Nothing destructive by default** — removing duplicates or unused imports,
+  sorting exports or `pubspec.yaml`: all opt-in, all reported.
 
-That costs real time, in three places:
-
-- **Reading.** "Does this screen talk to the network?" is one glance at a
-  grouped list, and a hunt through thirty lines in a jumbled one.
-- **Reviewing.** When two people add an import to the same file, Git cannot
-  tell that the two lines have nothing to do with each other — it reports a
-  conflict, and somebody stops work to resolve a list whose order nobody cared
-  about.
-- **Arguing.** With no rule, the order is a matter of taste. Taste gets
-  re-negotiated once per pull request, forever.
-
-`tidy_imports` picks the rule and applies it identically on every machine, so
-the list stops being anybody's decision. One command, from your project root:
+## Quick start
 
 ```sh
+dart pub add dev:tidy_imports      # or: flutter pub add dev:tidy_imports
 dart run tidy_imports
 ```
 
-By default it only ever **reorders** lines and adds the little `// Dart
-imports:` labels. It does not delete anything, does not rewrite your code, and
-does not touch a single line below the imports — and the options that *do*
-remove lines (unused imports, duplicates) stay switched off until you ask for
-them by name, and report what they did when they run.
+It belongs in `dev_dependencies` — a tool you run over your source, never one
+your app imports:
 
-### The technical answer
-
-The Dart toolchain leaves this exact gap, and this is the piece that fills it:
-
-| | What ships with Dart | What `tidy_imports` adds |
-|---|---|---|
-| `dart format` | Whitespace and line breaks. Since 3.13 it separates the `package:` and relative import *sections* — but it never reorders a directive | Orders them, and [agrees with the formatter's blank lines](#matching-dart-format-dart-313) by default instead of fighting them |
-| `directives_ordering` lint | *Reports* a directive in the wrong place | Fixes it: [`--flat`](#matching-darts-own-lints) emits exactly the shape the lint asks for |
-| `prefer_relative_imports` lint | Reports a `package:` URI that could be relative | Rewrites it, with [`--relative-imports`](#matching-darts-own-lints) |
-| `dart fix --code=unused_import` | Removes an import nothing uses | Runs it for you under [`--remove-unused`](#removing-duplicate-and-unused-imports), then tidies the gaps it leaves in the same pass |
-| — | Nothing groups, labels or reports | Group comments, [custom tiers](#custom-import-tiers) for internal packages, [`pubspec.yaml` sorting](#sorting-pubspecyaml), [duplicate folding](#removing-duplicate-and-unused-imports), and the [`--report`](#reading-your-import-graph) import graph |
-
-It earns its place in `dev_dependencies` when:
-
-- **you want the order enforced, not suggested.** `--exit-if-changed` checks
-  the whole project in one pass and names *every* unsorted file, so one CI run
-  shows the complete list instead of aborting on the first offender.
-- **the codebase is big enough that grouping carries information.**
-  `--group-by-folder-depth=1` turns a file's 25 project imports into four
-  labelled groups that match the architecture, instead of a dozen groups of two
-  lines each.
-- **you have internal packages.** A custom tier separates `package:acme_*`
-  from third-party pub packages — a distinction the built-in taxonomy cannot
-  make, because to Dart they are all simply packages.
-- **the sort has to be safe on real files.** A `show` clause `dart format`
-  wrapped over two lines, a conditional `if (dart.library.io)` import, an
-  `// ignore:` pragma that has to stay glued to its directive, a trailing
-  comment, an import commented out inside a nested `/* */`, a directive inside
-  a string literal in a code generator: every one of those broke a line-based
-  sorter, and every one has a test here.
-- **you want to know what the imports say about the project.**
-  [`--report`](#reading-your-import-graph) reads those very same directives as
-  a graph and names the import cycles and the files no entry point reaches.
-
-And when it is **not** worth it: a one-file script, or a team already content
-with `directives_ordering` warnings and fixing them by hand.
-
-## Contents
-
-**Start here** · [Why use it](#why-use-tidy_imports)
-· [How it works](#how-it-works) · [Installation](#installation)
-· [Usage](#usage) · [What is on by default](#what-is-on-by-default)
-· [Options](#options) · [Configuration](#configuration)
-· [Exit codes](#exit-codes)
-
-**Sorting more than imports** · [pubspec.yaml](#sorting-pubspecyaml)
-· [exports](#sorting-exports)
-· [duplicates and unused imports](#removing-duplicate-and-unused-imports)
-
-**Shaping the output** · [custom tiers](#custom-import-tiers)
-· [by folder](#grouping-project-imports-by-folder)
-· [folder depth](#limiting-the-folder-grouping-depth)
-· [test doubles](#grouping-test-doubles)
-· [a note that belongs to an import](#keeping-a-note-with-its-import)
-
-**Agreeing with the toolchain** · [dart format](#matching-dart-format-dart-313)
-· [`directives_ordering` and `prefer_relative_imports`](#matching-darts-own-lints)
-· [multi-line and commented imports](#multi-line-and-commented-imports)
-
-**Beyond sorting** · [reading your import graph](#reading-your-import-graph)
-· [CI integration](#ci-integration)
-· [using it as a library](#using-it-as-a-library)
-· [monorepos](#monorepo--pub-workspace-support)
-
-## How it works
-
-Every directive is read, classified by **where it comes from**, sorted
-alphabetically inside its group, and written back under a label. The
-classification reads the import URI — not the raw text of the line — so a
-comment that happens to mention `dart:` cannot drag a package import into the
-wrong group.
-
-The groups, in the order they are written:
-
-1. **Dart imports** (`dart:`)
-2. **Flutter imports** (`package:flutter/`)
-3. **Package imports** (`package:`)
-4. **Project imports** (relative or `package:<your_package>/`)
-
-Two more groups sit in that order once you ask for them:
-[custom tiers](#custom-import-tiers) between 3 and 4, and the
-[test-double group](#grouping-test-doubles) after 4. `--flat` replaces the
-whole taxonomy with [one run per section](#matching-darts-own-lints).
+```yaml
+dev_dependencies:
+  tidy_imports: ^2.5.0
+```
 
 ### Before
 
 ```dart
-import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:io';
-import 'package:myapp/home.dart';
+import 'widgets/user_card.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:my_app/services/api_client.dart';
 import 'package:intl/intl.dart';
-import 'another_file.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'models/user.dart';
 ```
 
 ### After
@@ -160,929 +91,256 @@ import 'another_file.dart';
 ```dart
 // Dart imports:
 import 'dart:async';
-import 'dart:io';
+import 'dart:convert';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 // Project imports:
-import 'package:myapp/home.dart';
-import 'another_file.dart';
+import 'package:my_app/services/api_client.dart';
+
+import 'models/user.dart';
+import 'widgets/user_card.dart';
 ```
 
-## Installation
+Only the directives move. Nothing below them is touched, and nothing is deleted
+unless you ask.
 
-`tidy_imports` is a tool you run *over* your source, never something your app
-imports at runtime. It belongs in **`dev_dependencies`** — put it in
-`dependencies` and you ship a sorting tool inside your app.
+## Why tidy_imports?
 
-### In a project (recommended)
+Nothing in Dart decides what order the imports go in, so they end up in the
+order they were typed — an order that gets re-argued in every review, and that
+turns two people adding an import to the same file into a merge conflict.
+`tidy_imports` picks the rule and applies it identically everywhere, so the list
+stops being anybody's decision.
 
-```sh
-dart pub add dev:tidy_imports
-```
+It fills the one gap the Dart toolchain leaves:
 
-Flutter projects use `flutter pub add dev:tidy_imports`. Either way it lands in
-the right section, at the current version:
-
-```yaml
-dev_dependencies:
-  tidy_imports: ^2.5.0
-```
-
-Then, from the project root:
-
-```sh
-dart run tidy_imports
-```
-
-This is the form to prefer: the version is pinned in `pubspec.yaml`, so your
-machine, your teammates' machines and CI all sort with the same rules.
-
-### Globally
-
-```sh
-dart pub global activate tidy_imports
-tidy_imports
-```
-
-Good for a one-off run on a project you do not want to touch the `pubspec.yaml`
-of. The version is whatever you activated last, which is exactly why it is the
-second choice.
+| | What ships with Dart | What `tidy_imports` adds |
+|---|---|---|
+| `dart format` | Whitespace; since 3.13 a blank line between import sections — but it never *reorders* a directive | Orders them, and writes the same blank lines the formatter does |
+| Lints | *Report* `directives_ordering`, `prefer_relative_imports`, `always_use_package_imports` | *Fix* them — and `--doctor` says which ones you have on |
+| `dart fix` | Removes an unused import | Runs it under `--remove-unused`, then tidies the gap in the same pass |
+| — | Nothing groups, labels, or looks at the graph | Group labels, custom tiers, cycles, dead files, coupling, a dependency audit |
 
 ## Usage
 
 ```sh
-# Sort every dart file in the project
-dart run tidy_imports
-
-# Sort specific files
-dart run tidy_imports lib/main.dart lib/app.dart
-
-# Sort one folder
-dart run tidy_imports "lib/features/"
-
-# Preview changes without writing (dry run)
-dart run tidy_imports --dry-run
-
-# CI: fail if any file is unsorted
-dart run tidy_imports --exit-if-changed
+dart run tidy_imports                      # sort every Dart file in the project
+dart run tidy_imports "lib/features/"      # only what matches a regex
+dart run tidy_imports --dry-run            # say what would change, write nothing
+dart run tidy_imports --exit-if-changed    # CI: fail if anything is unsorted
+dart run tidy_imports --doctor             # which options your lints want
+dart run tidy_imports --report             # what the imports say about the project
 ```
 
-### Choosing which files to sort
+Run it from the folder that holds `pubspec.yaml`. Positional arguments are
+regular expressions matched against the path, written with forward slashes on
+every platform.
+→ [Getting started](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/getting-started.md)
 
-A positional argument is a **regular expression**, matched against each file's
-path — not a shell glob. Two things follow from that:
+## Agree with your lints
 
-```sh
-dart run tidy_imports "lib/features/"     # every file under lib/features
-dart run tidy_imports "_test\.dart$"      # only test files
-dart run tidy_imports "lib/a/" "lib/b/"   # several patterns: any match wins
+Three lints read your imports too, and a sorter that writes what a lint reports
+makes the two tools undo each other forever. `--doctor` reads
+`analysis_options.yaml` — following its `include:` chain — and says what your
+configuration needs:
+
+```
+$ dart run tidy_imports --doctor
+┏━━ Checking the tidy_imports configuration against analysis_options.yaml
+┃  Lints that read imports: directives_ordering, always_use_package_imports
+┃  ✖ `directives_ordering` (from analysis_options.yaml) wants one
+┃    alphabetical run per section, and the grouped output breaks it […]
+┃      → flat: true, sort_exports: true
+┃  ! `always_use_package_imports` (from analysis_options.yaml) is on.
+┃    `package_imports` rewrites the relative imports under lib/ into the
+┃    `package:` form it asks for.
+┃      → package_imports: true
+┗━━ ✖ 1 fight, 1 suggestion
 ```
 
-Write patterns with **forward slashes on every platform**, Windows included —
-paths are normalised before matching. With no pattern, the whole project is
-sorted.
+`--doctor --apply` writes those keys into your config — keeping its comments and
+line endings — and `--doctor --exit-if-changed` fails CI while a fight is left
+standing. It also flags two lints that contradict each other.
 
-## What is on by default
-
-Almost nothing. `tidy_imports` sorts and groups your imports and changes
-nothing else about the file unless you ask it to — no deleting, no rewriting,
-no touching `pubspec.yaml`.
-
-The reason for that is narrow: a tool that removes a line you did not ask it to
-remove is a tool you stop running, and a tool you stop running sorts nothing at
-all. So the destructive options are opt-in — and the layout options are opt-in
-too, because a project's existing layout is a decision somebody already made.
-
-| On by default | Why |
+| Lint | Option |
 |---|---|
-| Group comments (`// Dart imports:` …) | The point of the tool. `--no-comments` drops them |
-| Blank line between groups | Readability. `--no-blank-lines` drops it |
-| **Blank line before relative project imports** | Not taste — see below. `--no-separate-relative-imports` drops it |
+| `directives_ordering` | `--flat --sort-exports` |
+| `prefer_relative_imports` | `--relative-imports` |
+| `always_use_package_imports` | `--package-imports` |
 
-Everything else — sorting exports, sorting `pubspec.yaml`, grouping by folder,
-splitting out test doubles, removing duplicates, removing unused imports, flat
-ordering, relative rewriting — is **off** until you turn it on, by flag or by
-config key. Every flag is negatable, so a config file is never the last word:
-`--no-<flag>` overrides it for one run.
+→ [Agreeing with your lints](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/lint-agreement.md)
 
-### Why that third one is on
+## See your architecture
 
-Since Dart 3.13, `dart format` puts a blank line between the `package:` and
-relative sections itself. With this off, `tidy_imports` removes the line and
-`dart format` puts it back, forever — every run of either tool produces a diff
-(issue #1). Turning it on by default is a bug fix wearing the clothes of a
-preference.
+The directives `tidy_imports` reads on every run *are* your dependency graph.
+`--report` says what it shows — and writes nothing:
 
-It does nothing when you have no relative project imports, and it is suppressed
-entirely under `--no-blank-lines`. If your project pins Dart below 3.13 and you
-prefer the tighter output, `--no-separate-relative-imports` or
-`separate_relative_imports: false` restores it.
-
-## Options
-
-| Flag | Short | Description |
-|---|---|---|
-| `--emojis` | `-e` | Add emojis to import group comments |
-| `--no-comments` | | Omit group comments entirely |
-| `--no-blank-lines` | | Omit blank lines between import groups |
-| `--blank-lines` | | Force them back on, over a config that disabled them |
-| `--sort-pubspec` | | Also sort `pubspec.yaml` dependencies alphabetically |
-| `--sort-exports` | | Also sort `export` directives into their own block |
-| `--group-by-folder` | | Separate project imports by subfolder |
-| `--group-by-folder-depth=<n>` | | Folder segments to group project imports by (`0` = whole path; above `0` implies `--group-by-folder`) |
-| `--test-imports` | | Group project test doubles (`fake_`/`mock_`) separately |
-| `--flat` | | One alphabetical run per section, no groups — what `directives_ordering` expects (**off by default**) |
-| `--relative-imports` | | Rewrite own-package imports as relative paths (**off by default**) |
-| `--attach-comments` | | Keep a `//` note written above an import with that import (**off by default**) |
-| `--remove-duplicates` | | Drop an import written identically twice (**off by default**) |
-| `--remove-unused` | | Run `dart fix --code=unused_import` before sorting (**off by default**) |
-| `--separate-relative-imports` | | Blank line before relative imports, matching `dart format` (Dart 3.13+) — **on by default**; use `--no-separate-relative-imports` to turn it off |
-| `--report` | | Read the import graph: cycles, and files no entry point reaches. Writes nothing |
-| `--dry-run` | | Preview changes without writing files |
-| `--exit-if-changed` | | Exit with code 1 if any file would change — or, with `--report`, on any finding |
-| `--ignore-config` | | Ignore configuration file / `pubspec.yaml` block |
-| `--strict-config` | | Exit with code 1 on a configuration problem instead of warning about it |
-| `--version` | `-v` | Print version and exit |
-| `--help` | `-h` | Show help |
-
-### Turning an option off
-
-Everything in the first group above is negatable, so a flag can override your
-config file for a single run — not only switch something on. A flag you type
-always wins:
-
-```sh
-# pubspec.yaml says `emojis: true`, but not for this run
-dart run tidy_imports --no-emojis
-
-# pubspec.yaml says `comments: false`, but put them back this once
-dart run tidy_imports --comments
+```
+$ dart run tidy_imports --report --feature-depth=2
+┏━━ Reading the import graph of 9 files
+┃  ✖ 2 groups of files that import each other:
+┃     lib/core/api_client.dart → lib/core/session.dart → lib/core/api_client.dart
+┃     lib/features/cart/cart_page.dart → lib/features/home/home_page.dart → lib/features/cart/cart_page.dart
+┃  ! 1 file no entry point reaches:
+┃     lib/features/home/legacy_banner.dart
+┃  ! 1 dependency in pubspec.yaml nothing imports:
+┃     intl
+┃  ✖ 1 package imported under lib/ or bin/ but declared only in dev_dependencies:
+┃     mocktail — lib/features/home/home_page.dart
+┃  Most imported:
+┃     4  lib/core/theme.dart
+┃  Features at feature_depth 2 — files, imports in and out, instability:
+┃     lib/core              3 files  in   7  out   0  I 0.00
+┃     lib/features/cart     1 files  in   1  out   3  I 0.75
+┗━━ • 5 findings
 ```
 
-`--no-comments` and `--no-blank-lines` are simply the "off" side of the
-`comments` and `blank-lines` options, and mean what they always meant.
+`--format=mermaid` turns the same graph into a diagram GitHub draws in a README
+or a pull request — features boxed, cycles in red, dead files dashed:
 
-`--dry-run`, `--exit-if-changed`, `--ignore-config`, `--version` and `--help`
-describe a single invocation rather than a preference, so there is nothing to
-negate.
+```mermaid
+flowchart LR
+  subgraph f1["lib/core"]
+    n0["api_client.dart"]
+    n1["session.dart"]
+    n2["theme.dart"]
+  end
+  subgraph f2["lib/features/auth"]
+    n3["login_page.dart"]
+  end
+  subgraph f3["lib/features/cart"]
+    n4["cart_page.dart"]
+  end
+  subgraph f4["lib/features/home"]
+    n5["home_page.dart"]
+    n6["legacy_banner.dart"]
+  end
+  n0 --> n1
+  n1 --> n0
+  n3 --> n0
+  n3 --> n2
+  n4 --> n0
+  n4 --> n1
+  n4 --> n5
+  n5 --> n2
+  n5 --> n3
+  n5 --> n4
+  n6 --> n2
+  linkStyle 0,1,6,9 stroke:#d33,stroke-width:2px
+  classDef dead stroke-dasharray:4 4,color:#888
+  class n6 dead
+```
+
+`--format=dot` feeds Graphviz, and `--format=json` feeds your own tooling.
+`--report --exit-if-changed` fails CI on any finding.
+→ [The import graph](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/import-graph.md)
 
 ## Configuration
 
-Add a `tidy_imports:` block to your `pubspec.yaml`:
+Every option is a flag and a key in a `tidy_imports:` block of `pubspec.yaml`
+(or a standalone `tidy_imports.yaml`). A flag you type wins over the file, in
+either direction — every one is negatable.
 
 ```yaml
 tidy_imports:
-  emojis: false          # Default: false — add emojis to group comments
-  comments: true         # Default: true  — add group comments
-  blank_lines: true      # Default: true  — blank lines between groups
-  sort_pubspec: false    # Default: false — also sort pubspec.yaml deps
-  sort_exports: false    # Default: false — also sort export directives
-  group_project_by_folder: false  # Default: false — split project imports by folder
-  group_project_by_folder_depth: 0  # Default: 0 — folder segments to group by (0 = whole path)
-  separate_relative_imports: true   # Default: TRUE — blank line before relative imports
-  test_imports: false    # Default: false — split fake_/mock_ files into their own group
-  flat: false            # Default: false — no groups, one alphabetical run per section
-  relative_imports: false   # Default: false — rewrite own-package imports as relative
-  attach_comments: false    # Default: false — a note above an import moves with it
-  remove_duplicates: false  # Default: false — drop an import written identically twice
-  remove_unused: false      # Default: false — run dart fix --code=unused_import first
-  report_roots: []          # Default: [] — extra entry points for --report, as regexes
-  test_import_prefixes:  # Default: [fake_, mock_] — file-name prefixes treated as test doubles
-    - fake_
-    - mock_
-  ignored_files:         # Regex patterns applied to relative file paths
-    - \/lib\/generated\/  # ignore a whole folder
-    - \.g\.dart$          # ignore generated files (build_runner)
-    - \.freezed\.dart$    # ignore freezed files
-    - \.gr\.dart$         # ignore auto_route files
-  tiers:                 # Custom import groups (see below)
-    - name: "Company imports:"
-      pattern: "package:acme_"
-```
-
-The `ignored_files` patterns are regular expressions matched against the path
-relative to the project root (e.g. `/lib/src/foo.dart`).
-
-`sort_exports` turns on the separate `export` block described in
-[Sorting exports](#sorting-exports). `group_project_by_folder_depth` limits how
-much of the folder path counts as a grouping key, as described in
-[Limiting the folder grouping depth](#limiting-the-folder-grouping-depth) — any
-value above `0` enables folder grouping on its own, so `group_project_by_folder`
-does not have to be set as well.
-
-### Standalone config file
-
-Instead of the `pubspec.yaml` block, you can place the same options in a
-`tidy_imports.yaml` file at the project root. When present, it takes precedence
-over the `pubspec.yaml` block — handy for monorepos with a shared root config.
-
-```yaml
-# tidy_imports.yaml
-emojis: false
-sort_pubspec: true
-ignored_files:
-  - \.g\.dart$
-```
-
-**The options are the document — no `tidy_imports:` key around them.** That
-wrapper is the `pubspec.yaml` shape, where the block has to be named because it
-shares the file with everything else. Write it in the standalone file and every
-option sits one level below where it is read.
-
-That used to cost the whole file in silence: it parsed, configured nothing, and
-the run fell back to defaults while reporting success. Now the wrapper is
-unwrapped and reported:
-
-```
-Warning: tidy_imports.yaml wraps its options in a `tidy_imports:` key. That
-shape belongs in pubspec.yaml — in a standalone file the options are the
-document. Reading them from inside the key; move them to the top level to
-silence this.
-```
-
-The same goes for an option that is misspelled or has the wrong kind of value:
-
-```
-Warning: unknown option `sort_export` in the tidy_imports configuration. Did
-you mean `sort_exports`? It is being ignored.
-Warning: option `emojis` expects a boolean (true or false), but the value is a
-String. Using the default.
-```
-
-A file that does not parse **at all** is reported the same way, rather than as
-the YAML parser's own stack trace:
-
-```
-Warning: tidy_imports.yaml is not valid YAML — line 2, column 13: Mapping
-values are not allowed here. Did you miss a colon earlier? Using the defaults.
-```
-
-Every one of these keeps the run going. Pass **`--strict-config`** to exit 1 on
-any of them instead — it stops before the first file is touched, which is what
-you want in CI, where a warning nobody reads is the same as no warning at all.
-
-### Custom import tiers
-
-By default, all third-party packages share the single **Package imports** group.
-Custom tiers let you split out internal/shared packages into their own group,
-placed between the generic package group and your project imports:
-
-```yaml
-tidy_imports:
-  tiers:
-    - name: "Shared imports:"
-      pattern: "package:acme_shared"
-    - name: "Company imports:"
-      pattern: "package:acme_"
-```
-
-Each import whose line contains a tier's `pattern` goes into that tier (first
-match wins, so list the most specific patterns first). Result:
-
-```dart
-// Package imports:
-import 'package:http/http.dart';
-
-// Shared imports:
-import 'package:acme_shared/utils.dart';
-
-// Company imports:
-import 'package:acme_billing/api.dart';
-
-// Project imports:
-import 'package:myapp/home.dart';
-```
-
-## Sorting pubspec.yaml
-
-Pass `--sort-pubspec` (or set `sort_pubspec: true`) to also alphabetize the
-`dependencies`, `dev_dependencies`, and `dependency_overrides` sections of your
-`pubspec.yaml`. Nested dependency blocks (git/path/hosted) and comments attached
-to a dependency are preserved.
-
-```sh
-dart run tidy_imports --sort-pubspec
-```
-
-## Sorting exports
-
-Pass `--sort-exports` (or set `sort_exports: true`) to also sort your `export`
-directives. They are collected into a block of their own, placed right after the
-import block, using the same taxonomy — `// Dart exports:`,
-`// Flutter exports:`, `// Package exports:`, `// Project exports:` and
-`// Test exports:`. Custom import tiers apply to exports as well.
-
-It is **off by default** on purpose: enabled everywhere, it would rewrite the
-barrel file of every existing project on the first run. Barrels are also where
-it pays off — a `lib/index.dart` in a large app, or a generated `database.dart`
-with hundreds of `export` lines, is the one file no formatter orders for you.
-
-### Before
-
-```dart
-export 'src/widgets/button.dart';
-export 'package:acme_shared/utils.dart';
-export 'dart:async' show Future;
-export 'src/models/user.dart';
-export 'package:flutter/material.dart';
-```
-
-### After
-
-```dart
-// Dart exports:
-export 'dart:async' show Future;
-
-// Flutter exports:
-export 'package:flutter/material.dart';
-
-// Package exports:
-export 'package:acme_shared/utils.dart';
-
-// Project exports:
-export 'src/models/user.dart';
-export 'src/widgets/button.dart';
-```
-
-## Reading your import graph
-
-`tidy_imports` already parses every directive in your project on every run.
-Those directives *are* a dependency graph — `--report` says what it shows,
-sorts nothing and writes nothing:
-
-```sh
-dart run tidy_imports --report
-```
-
-```
-┏━━ Reading the import graph of 9 files
-┃  ✖ 1 group of files that import each other:
-┃     lib/core/api.dart → lib/core/db.dart → lib/features/home.dart → lib/core/api.dart
-┃  ! 2 files no entry point reaches:
-┃     lib/core/legacy_cart.dart
-┃     lib/core/old_checkout.dart
-┃     (build_runner, reflection and dynamic loading are invisible here — read before deleting)
-┗━━ • 3 findings
-```
-
-**Files that import each other.** Dart allows import cycles, so nothing in
-the toolchain points them out — but two files in a cycle cannot be read,
-tested or moved apart independently. Each group is drawn as a walk along
-imports that really exist; when the group is larger than the shortest loop
-through it, the rest is counted (`+2 more in this group`).
-
-**Files no entry point reaches.** Different from an unused *import*: a whole
-file that no entry point can get to through any chain of `import`, `export` or
-`part`. That sees through a dead barrel to the files it exports, and through a
-pair of dead files that only import each other. In a long-lived app there are
-usually more than you expect.
-
-### What counts as an entry point
-
-Anything you can run or publish, so it is unreferenced by definition:
-
-- `lib/main.dart`, and every `lib/main_*.dart` flavour
-- any file under `lib/` that declares a top-level `main()`
-- every file outside `lib/` — tests, `bin/`, `tool/`, `example/`, `web/`
-- for a **library** — no `publish_to: none`, no `lib/main.dart` — every file
-  outside `lib/src/`, since pub convention makes that the public surface your
-  consumers import
-- `lib/<your_package>.dart`, the Flutter plugin registrant, and whatever you
-  list under `report_roots`:
-
-```yaml
-tidy_imports:
-  report_roots:
-    - /lib/app/bootstrap\.dart   # regex on the project-relative path
-```
-
-A generated `.g.dart` is reached through the `part` directive of the file it
-belongs to, so it is only ever listed alongside a dead owner.
-
-### Narrowing the report
-
-A positional pattern or an `ignored_files` entry narrows what is **printed**,
-never what is **read**. The graph is always built from the whole project, so a
-file kept alive only by something you filtered out is still alive:
-
-```sh
-dart run tidy_imports --report "lib/features/"   # findings in lib/features only
-```
-
-That is also how a cycle inside generated code gets out of the way without
-losing its edges — `flutter gen-l10n` output is the stock example:
-
-```yaml
-tidy_imports:
+  flat: true
+  sort_exports: true
+  package_imports: true
   ignored_files:
-    - /lib/l10n/
-```
-
-### In CI
-
-```sh
-dart run tidy_imports --report --exit-if-changed
-```
-
-Exits 1 on any finding, with a line on stderr saying so, so a cycle introduced
-by a pull request fails the build instead of settling in. A run that finds no
-Dart files at all also exits 1 here: a gate that inspected nothing must not
-pass.
-
-### What it cannot see
-
-The graph is built from directives, nothing else. Code reached by
-`build_runner`, reflection, or a path assembled at runtime is invisible to it,
-so an "unreachable" file is a question to answer, not an instruction to follow.
-Read before deleting.
-
-## Matching Dart's own lints
-
-Two lints in the Dart ecosystem disagree with how `tidy_imports` sorts by
-default. Both are off unless you ask, because the default output — grouped,
-labelled — is the whole point of the tool for most people.
-
-### `--flat` — for `directives_ordering`
-
-The `directives_ordering` lint wants one alphabetical run per section: `dart:`,
-then `package:`, then relative. The default grouping breaks it, because
-`package:flutter/…` is lifted above the other packages:
-
-```dart
-// default                                    // --flat
-// Dart imports:                              import 'dart:io';
-import 'dart:io';                             import 'package:args/args.dart';
-                                              import 'package:flutter/material.dart';
-// Flutter imports:                           import 'helper.dart';
-import 'package:flutter/material.dart';
-                                              // no lint warning
-// Package imports:
-import 'package:args/args.dart';
-
-//  ← Sort directive sections alphabetically
-```
-
-With `--flat` the Flutter group stops being special and the headers go away —
-a comment between two runs the lint reads as one section would be a lie about
-the structure.
-
-A blank line is written wherever the section changes, which is exactly where
-`dart format` 3.13+ writes one, so the two tools agree instead of undoing each
-other on every run. `--no-blank-lines` gives you the tight run back: the lint
-reads order, not spacing.
-
-`export` directives are only moved when you ask for them. The lint wants them
-in a block of their own below the imports, which is what
-**`--flat --sort-exports`** produces; on its own, `--flat` leaves every
-`export` exactly where it is.
-
-Grouping options (`--group-by-folder`, `--test-imports`, custom tiers) are
-ignored under `--flat`: there are no groups left for them to shape.
-
-### `--relative-imports` — for `prefer_relative_imports`
-
-Rewrites imports of your own package as paths relative to the importing file:
-
-```dart
-// in lib/src/p2/bar.dart
-import 'package:my_app/src/foo.dart';      →  import '../foo.dart';
-import 'package:my_app/src/p2/foo.dart';   →  import 'foo.dart';
-```
-
-Only files under `lib/` are touched. A file in `test/` or `bin/` cannot reach
-`lib/` with a relative URI at all, so its `package:` imports are left exactly as
-they are.
-
-Another package's imports are never rewritten, and the prefix, `show`/`hide`
-clause and trailing comment all survive the rewrite. If a rewrite happens to
-produce an import you already had, `--remove-duplicates` will fold the two.
-
-Note that `prefer_relative_imports` and `always_use_package_imports` are
-opposites — the Dart team ships both and expects you to pick one. This flag
-serves the first; leave it off for the second.
-
-## Removing duplicate and unused imports
-
-Both are **off by default**. A sorter that deletes lines uninvited is a sorter
-you stop trusting, so each one has to be asked for — by flag, or by config key.
-
-### `--remove-duplicates`
-
-Drops an import written identically twice, keeping the first occurrence:
-
-```dart
-// before                         // after
-import 'dart:math';               import 'dart:math';
-import 'package:demo/z.dart';
-import 'dart:math';               import 'package:demo/z.dart';
-```
-
-It compares text, with runs of whitespace collapsed — so a directive that
-`dart format` wrapped over two lines still matches its one-line twin. Anything
-that *reads* differently is left alone, because folding it could change what
-the file means:
-
-| Left alone | Why |
-|---|---|
-| `import 'z.dart' as a;` and `as b;` | Different prefixes; both are in use |
-| `show Foo;` and `show Bar;` | Different combinators |
-| `import 'dart:math'; // for max` and the plain form | Dropping one drops what the comment says |
-
-### `--remove-unused`
-
-Runs `dart fix --apply --code=unused_import` over the project first, then sorts
-— so the holes it leaves behind are tidied up in the same pass:
-
-```sh
-dart run tidy_imports --remove-unused --remove-duplicates
-```
-
-This one shells out on purpose. Deciding that an import is unused means
-resolving every identifier in the file to the library that declares it,
-extension methods included. The analyzer that ships with your SDK already does
-that, correctly; approximating it with text matching would eventually remove an
-import that is in use. So the SDK answers the question and `tidy_imports`
-handles the layout.
-
-It needs the Dart SDK on `PATH` and a project that resolves — run `dart pub get`
-first. It also costs a full analyzer pass, about a second on a small project and
-longer on a large one, which is the other reason it is opt-in.
-
-Under `--dry-run` and `--exit-if-changed` nothing is written: `dart fix` runs in
-its own dry-run mode, and duplicates are counted and reported rather than
-removed.
-
-## Grouping project imports by folder
-
-Pass `--group-by-folder` (or set `group_project_by_folder: true`) to visually
-separate your project imports by their subfolder with a blank line whenever the
-folder changes — useful in large projects with many local files.
-
-```dart
-// Project imports:
-import 'package:myapp/data/user_repository.dart';
-import 'package:myapp/data/user_service.dart';
-
-import 'package:myapp/ui/home_page.dart';
-import 'package:myapp/ui/settings_page.dart';
-```
-
-## Limiting the folder grouping depth
-
-`--group-by-folder` breaks project imports at **every** folder change, because
-the grouping key is the whole folder path. Pass `--group-by-folder-depth=<n>`
-(or set `group_project_by_folder_depth: <n>`) to count only the first `n` folder
-segments after the package root. **Any value above `0` already enables folder
-grouping** — you do not need to pass `--group-by-folder` as well.
-
-For `package:myapp/features/orders/presentation/widgets/order_card.dart` the
-grouping key is:
-
-| Depth | Key |
-|---|---|
-| `0` (default) | `package:myapp/features/orders/presentation/widgets` — the whole path |
-| `1` | `package:myapp/features` |
-| `2` | `package:myapp/features/orders` |
-
-This exists because of feature-first / Clean Architecture layouts. There,
-`--group-by-folder` on its own splits a file with 25 project imports into about
-a dozen groups of one or two lines each, which is noise rather than structure.
-At depth `1` the groups match the architecture instead: one `core/`, one
-`components/`, one `features/`, one `providers/`.
-
-### `--group-by-folder` (depth `0`)
-
-```dart
-// Project imports:
-import 'package:myapp/components/app_button.dart';
-
-import 'package:myapp/core/theme/app_theme.dart';
-
-import 'package:myapp/core/util/format_utils.dart';
-
-import 'package:myapp/features/orders/domain/order.dart';
-
-import 'package:myapp/features/orders/presentation/order_page.dart';
-
-import 'package:myapp/features/orders/presentation/widgets/order_card.dart';
-
-import 'package:myapp/providers/session_provider.dart';
-```
-
-### `--group-by-folder-depth=1`
-
-```dart
-// Project imports:
-import 'package:myapp/components/app_button.dart';
-
-import 'package:myapp/core/theme/app_theme.dart';
-import 'package:myapp/core/util/format_utils.dart';
-
-import 'package:myapp/features/orders/domain/order.dart';
-import 'package:myapp/features/orders/presentation/order_page.dart';
-import 'package:myapp/features/orders/presentation/widgets/order_card.dart';
-
-import 'package:myapp/providers/session_provider.dart';
-```
-
-## Matching `dart format` (Dart 3.13+)
-
-Since [Dart 3.13](https://dart.dev/blog/announcing-dart-3-13#tools-updates) the
-formatter inserts a blank line between the `package:` and relative import
-sections. Because `tidy_imports` keeps `package:<your_project>/…` and relative
-imports together in one **Project imports:** block, the two tools used to undo
-each other on every run.
-
-**This is on by default since 2.0.0** — it emits that blank line up front, so
-both tools agree and the file stops flip-flopping. Turn it off with
-`--no-separate-relative-imports` or `separate_relative_imports: false` if you
-prefer the tighter block and do not run `dart format`:
-
-```dart
-// Project imports:
-import 'package:myapp/home.dart';
-
-import 'another_file.dart';
-```
-
-The option is a no-op when blank lines are disabled (`--no-blank-lines` /
-`blank_lines: false`), and it never doubles up with `--group-by-folder`, which
-already breaks at that boundary. It applies to the `--test-imports` group too.
-
-[`--flat`](#matching-darts-own-lints) reaches the same agreement by a different
-route: it has no Project group to split, so it writes a blank line wherever the
-section changes — `dart:` to `package:` to relative — which is every boundary
-the formatter cares about.
-
-## Grouping test doubles
-
-Pass `--test-imports` (or set `test_imports: true`) to pull fakes and mocks out
-of your project imports and into a dedicated group:
-
-```dart
-// Project imports:
-import 'package:myapp/cliente_details_repository.dart';
-
-// Test imports:
-import 'package:myapp/mock_auth_service.dart';
-import 'fake_cliente_details_repository.dart';
-```
-
-A file counts as a test double when it is **a project import** (relative or
-`package:<your_package>/`) **and** its file name starts with a configured
-prefix — `fake_` or `mock_` by default. Override the list with
-`test_import_prefixes` (e.g. add `stub_` or `spy_`); a custom list replaces the
-defaults rather than extending them.
-
-Third-party packages are never affected, so real pub packages whose names look
-like doubles — `package:fake_async/fake_async.dart`,
-`package:mock_web_server/mock_web_server.dart` — stay in **Package imports**.
-To group testing libraries such as `mockito`, use a
-[custom tier](#custom-import-tiers) instead:
-
-```yaml
-tidy_imports:
-  test_imports: true
+    - \.g\.dart$
   tiers:
-    - name: "Testing imports:"
-      pattern: "package:mockito"
+    - name: "Company imports:"
+      pattern: "package:acme_"
 ```
 
-## Multi-line and commented imports
+A misspelled option, a value of the wrong type or a file that does not parse is
+a warning naming the key — never silence — and `--strict-config` makes it fatal.
 
-A directive does not have to be one clean line to be sorted. There is nothing to
-turn on here — these are all recognised, classified and sorted like any other
-import:
+### Options
 
-- **Imports that `dart format` wrapped onto two lines**, usually because of a
-  long `show` or `as` clause. They used to be missed entirely, sliding out of
-  the sorted block and ending up loose below the groups:
-
-  ```dart
-  import 'package:flutter_riverpod/flutter_riverpod.dart'
-      show Consumer, ProviderContainer;
-  ```
-
-  The same goes for conditional imports (`if (dart.library.io)`), which
-  previously landed outside every group.
-
-- **Imports with a trailing line comment.** They used to be ejected from the
-  sorted block; now they are sorted normally and the comment stays on the same
-  line:
-
-  ```dart
-  import 'package:app/x.dart'; // ignore-me: documented reason
-  ```
-
-- **`// ignore:` comments above an import travel with it.** Sorting used to tear
-  the comment off its import and leave it below the block, silently switching
-  the lint suppression off. `// ignore_for_file:` applies to the whole file, so
-  it stays where it is, at the top.
-
-Classification also reads the **import URI**, not the raw text of the line. A
-line such as `import 'package:http/http.dart'; // uses dart:io underneath` used
-to be filed under **Dart imports** because of the word in the comment; it now
-goes to **Package imports**, where it belongs.
-
-### Keeping a note with its import
-
-`// ignore:` travels with its import whether you ask or not — leaving it behind
-switches the lint suppression off, which is a change in meaning, not in layout.
-A **plain** note above an import is a different question, and the answer is
-`--attach-comments` (or `attach_comments: true`):
-
-```dart
-// before                                 // with --attach-comments
-import 'package:http/http.dart';          // Package imports:
-                                          // the only client that retries
-// the only client that retries           import 'package:http/http.dart';
-import 'package:dio/dio.dart';
-                                          // Project imports:
-import 'package:myapp/app.dart';          import 'package:myapp/app.dart';
-```
-
-Without it the note is not part of the directive, so rebuilding the block
-leaves it below the sorted imports, where it now explains whatever follows it.
-
-Three comments are never attached, in either mode:
-
-| Comment | Where it stays | Why |
-|---|---|---|
-| The note above the **first** directive | On top | It is the file's own header — a licence, an authorship note |
-| `// ignore_for_file:` | On top | It applies to the whole file, not to one directive |
-| `///` doc comments | Where they are | A doc comment documents a declaration, never a directive |
-
-It is **off by default** because it moves comments that are already in your
-files, and a project that has learned to write around the old behaviour should
-not have its diff rewritten by an upgrade.
-
-### What is left alone
-
-The other half of the promise: text that only *looks* like a directive is never
-moved. A commented-out import stays commented out, and an import inside a string
-stays inside the string.
-
-```dart
-/*
-import 'package:app/disabled.dart';    // stays disabled
-*/
-
-const template = '''
-import 'package:app/generated.dart';   // stays in the template
-''';
-```
-
-The sorter tracks quotes and `/* */` blocks — which nest in Dart — line by line,
-so only a line that *begins* in executable code can be a directive at all.
-
-## Using it as a library
-
-Everything the CLI does to the *text* of a file is a pure function you can
-call. `bin/tidy_imports.dart` owns all of the filesystem access, argument
-parsing and console output; `lib/` reads nothing, writes nothing and never
-calls `exit()` — it throws, or it returns data. That is what makes it usable
-from your own script:
-
-```dart
-import 'package:tidy_imports/tidy_imports.dart';
-
-void main() {
-  final result = sortImports(
-    source.split('\n'),
-    'my_app', // your package name — what the Project group is decided from
-    false, // emojis
-    false, // deprecated and inert; removed in 3.0.0
-    false, // noComments
-    separateRelativeImports: true,
-  );
-
-  if (result.updated) print(result.sortedFile);
-}
-```
-
-| Symbol | What it is |
+| Flag | What it does |
 |---|---|
-| `sortImports(lines, packageName, emojis, _, noComments, {…})` | The sorter. Returns `ImportSortData(sortedFile, updated, duplicatesRemoved:)` |
-| `sortPubspec(String)` | The dependency sort, string in and string out |
-| `TidyConfig.load(root, pubspecYaml)`, `.fromYaml(node)`, `.fromStandalone(node)` | The config reader. `TidyConfig.issues` is what was wrong with it, as finished sentences |
-| `CustomTier(name, pattern)` | One custom group |
-| `directiveUris(lines)` | Every `import`, `export` and `part` URI — skipping anything inside a string or a `/* */` block |
-| `declaresMain(lines)` | Whether the file declares a top-level `main()` |
-| `ImportGraph.build(directivesByFile, packageName, {packages})` | The graph behind `--report`: `cycles()`, `cycleWalk()`, `unreachable()`, `unreferenced()` |
-| `resolveUri(uri, from:, packageName:, packages:)` | One URI to a project-relative path, or `null` when it points outside |
-| `dartFiles(root, patterns, {extraDirectories})` | File discovery. Throws `FormatException` on a bad pattern |
-| `compilePatterns(patterns, label)`, `toPosix(path)`, `standardDirectories`, `reportDirectories` | The pattern, path and directory helpers the CLI itself uses |
+| `--flat` | One alphabetical run per section, for `directives_ordering` |
+| `--relative-imports` | Own imports under `lib/` as relative paths, for `prefer_relative_imports` |
+| `--package-imports` | Relative imports under `lib/` as `package:`, for `always_use_package_imports` |
+| `--sort-exports` | `export` directives in a block of their own |
+| `--group-by-folder`, `--group-by-folder-depth=<n>` | Break the Project group by folder |
+| `--test-imports` | `fake_*` / `mock_*` files in a group of their own |
+| `--attach-comments` | A note above an import moves with it |
+| `--remove-duplicates` | Drop an import written twice |
+| `--remove-unused` | Run `dart fix --code=unused_import` first |
+| `--sort-pubspec` | Sort the dependency sections of `pubspec.yaml` |
+| `-e`, `--emojis` · `--no-comments` · `--no-blank-lines` | Shape the labels and spacing |
+| `--no-separate-relative-imports` | Drop the blank line `dart format` 3.13+ writes (on by default) |
+| `--doctor` · `--apply` | Check the config against your lints · write the fixes |
+| `--report` · `--format` · `--feature-depth` | Read the import graph · as text, Mermaid, DOT or JSON · feature size |
+| `--dry-run` · `--exit-if-changed` | Write nothing · fail when something would change |
+| `--ignore-config` · `--strict-config` | Skip the config · fail on a config problem |
 
-[`example/example.dart`](example/example.dart) runs one demonstration per
-option and is the fastest way to see the shapes `sortImports` takes.
+→ [Every flag and config key](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/configuration.md)
 
-## CI Integration
-
-### GitHub Actions
+## CI
 
 ```yaml
-- name: Check import order
-  run: dart run tidy_imports --exit-if-changed
+# .github/workflows/ci.yml
+- run: dart run tidy_imports --exit-if-changed           # imports are sorted
+- run: dart run tidy_imports --doctor --exit-if-changed  # config agrees with the lints
+- run: dart run tidy_imports --report --exit-if-changed  # no cycles, dead files, dev-only imports
 ```
 
-`--exit-if-changed` checks the **whole project in one pass** and lists **every**
-file that needs sorting before exiting with code `1` — so a single CI run shows
-you everything to fix, not just the first offender. It never writes files. Use
-`--dry-run` locally for the same read-only preview with a friendlier summary.
-
-### Exit codes
-
-| Code | When |
-|---|---|
-| `0` | Nothing to report. Files were sorted, or — in a read-only mode — none needed it |
-| `1` | Something you asked to hear about: a file needs sorting under `--exit-if-changed`, a finding under `--report --exit-if-changed`, a configuration problem under `--strict-config`, a file that could not be read, an invalid pattern or flag, or a missing / nameless `pubspec.yaml` |
-
-Under `--remove-unused` a failing `dart fix` exits with whatever code `dart fix`
-returned, so a broken analysis stays distinguishable from an unsorted file.
-
-Every user error is one line on stderr — never a stack trace. If you ever see
-one, that is a bug worth
-[reporting](https://github.com/Franklyn-R-Silva/tidy_imports/issues).
-
-### pre-commit hook
+Every check reads the whole project and names **every** problem before exiting
+`1`, so one run shows everything to fix. Every user error is one line on stderr,
+never a stack trace.
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v2.5.0' # use the latest release tag
+    rev: 'v2.5.0'
     hooks:
-      - id: dart-import-sorter      # for plain Dart projects
-      # - id: flutter-import-sorter # for Flutter projects
+      - id: dart-import-sorter      # or flutter-import-sorter
 ```
 
-## Directories scanned
+→ [CI, exit codes, and the import graph in your job summary](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/ci.md)
 
-`lib/`, `src/`, `bin/`, `test/`, `tests/`, `test_driver/`, `integration_test/`, `packages/`
+## Documentation
 
-The `packages/` directory is included to support pub workspaces and monorepos.
+| | |
+|---|---|
+| [Getting started](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/getting-started.md) | Installing, running, choosing files, what is on by default |
+| [Configuration](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/configuration.md) | Every flag and config key, the standalone file, diagnostics |
+| [Shaping the output](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/output-shape.md) | Groups, custom tiers, exports, folders, test doubles |
+| [Agreeing with your lints](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/lint-agreement.md) | `--doctor`, `--flat`, relative and package imports, `dart format` |
+| [Cleaning up](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/cleanup.md) | Duplicates, unused imports, `pubspec.yaml` |
+| [The import graph](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/import-graph.md) | Cycles, dead files, dependencies, coupling, Mermaid / DOT / JSON |
+| [Tricky imports](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/tricky-imports.md) | Multi-line, conditional and commented directives |
+| [CI](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/ci.md) | GitHub Actions, exit codes, pre-commit |
+| [Using it as a library](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/library-api.md) | The pure functions behind the CLI |
 
-## Monorepo / pub workspace support
+## Coming from import_sorter
 
-`tidy_imports` works in pub workspaces where individual packages do not have their own `pubspec.lock`. When no lock file is found, the tool continues normally — Flutter plugin registrant detection is simply skipped. No crash, no manual workaround needed.
-
-## Improvements over import_sorter
-
-| Issue | import_sorter | tidy_imports |
-|---|---|---|
-| Arg parsing | Raw string matching — breaks with flags | `ArgParser` — correct flag resolution |
-| Positional file args | Passes raw `args` (includes flags) | Uses `argResults.rest` |
-| `pubspec.lock` in monorepos | Crashes with `PathNotFoundException` | Graceful fallback |
-| `packages/` folder | Not scanned | Scanned |
-| `--dry-run` preview | Not available | Available |
-| `--no-blank-lines` | Not available | Available |
-| Custom import tiers | Not available | Available |
-| Sort `pubspec.yaml` deps | Not available | `--sort-pubspec` |
-| Group project imports by folder | Not available | `--group-by-folder` |
-| Folder grouping depth | Not available | `--group-by-folder-depth=<n>` |
-| Separate group for test doubles | Not available | `--test-imports` |
-| Sort `export` directives | Not available | `--sort-exports` |
-| `dart format` 3.13+ import sections | Fights the formatter | Agrees with it, by default |
-| Remove duplicate imports | Requested in #57, still open | `--remove-duplicates` |
-| Remove unused imports | Requested in #56, still open | `--remove-unused` |
-| `directives_ordering` lint | Requested in #58 / #28, still open | `--flat` |
-| Rewrite own imports as relative | Requested in #59, still open | `--relative-imports` |
-| Invalid file pattern | Unhandled `FormatException` | Readable error, exit 1 |
-| Misspelled flag | Unhandled `FormatException` | Readable error, exit 1 |
-| Broken `pubspec.yaml` / no `name:` | Unhandled `TypeError` | Readable error, exit 1 |
-| Broken config file | Not read at all | Reported as a sentence; `--strict-config` makes it fatal |
-| Group comments inside string literals | Silently deleted | Preserved |
-| Multi-line imports (wrapped `show`/`as`) | Dropped out of the sorted block | Sorted like any other import |
-| Trailing comment on an import | Ejected the import from the block | Sorted, comment kept on the line |
-| `// ignore:` above an import | Detached from its import | Travels with the import |
-| Import classification | Reads the raw line, comments included | Reads the import URI |
-| Standalone config file | Not available | `tidy_imports.yaml` |
-| Direct CLI command | `dart pub global run ...:main` | `tidy_imports` |
-| `--exit-if-changed` in CI | Aborts on first unsorted file | Reports every unsorted file |
-| pre-commit hook | `language: script` (broken) | `language: system` (works) |
-| Dart SDK | `>=2.12.0` | `>=3.0.0` |
-| Conditional imports | Misclassified | Handled correctly |
-| Versioning | Manual | Manual, with CI refusing a mismatch |
+The default output is the same — same groups, same labels, same order — so
+switching is a dependency swap and a renamed config block.
+→ [What changed, and how to switch](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/migrating-from-import_sorter.md)
 
 ## Contributing
 
-Pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup,
-commit format, and the release process.
-
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security Policy](SECURITY.md)
-- [Changelog](CHANGELOG.md)
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+setup, the commit format and the release process.
+[Code of Conduct](CODE_OF_CONDUCT.md) · [Security Policy](SECURITY.md) ·
+[Changelog](CHANGELOG.md)
 
 ## Credits
 
-Based on the original work by [@gleich](https://github.com/gleich) and contributors
-of [import_sorter](https://github.com/fluttercommunity/import_sorter).
+Built on the original work by [@gleich](https://github.com/gleich) and the
+contributors of [import_sorter](https://github.com/fluttercommunity/import_sorter).
 
 ## License
 

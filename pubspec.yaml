@@ -6,12 +6,21 @@ version: 2.5.0
 repository: https://github.com/Franklyn-R-Silva/tidy_imports
 homepage: https://github.com/Franklyn-R-Silva/tidy_imports
 issue_tracker: https://github.com/Franklyn-R-Silva/tidy_imports/issues
+documentation: https://github.com/Franklyn-R-Silva/tidy_imports/tree/main/docs
 topics:
   - imports
   - formatter
   - cli
   - import-sorter
   - developer-tools
+
+# The first image is pub.dev's thumbnail, and an animated one is shown by its
+# first frame -- the GIF opens on the unsorted file, so the still goes first.
+screenshots:
+  - description: 'A jumbled Dart import list next to the same list sorted by tidy_imports into labelled Dart, Flutter, package and project groups.'
+    path: screenshots/before_after.png
+  - description: 'Running dart run tidy_imports in a terminal: the import block of a Flutter file is sorted and grouped in place.'
+    path: screenshots/demo.gif
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

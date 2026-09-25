@@ -13,6 +13,10 @@ release-please-config.json
 .pre-commit-hooks.yaml
 CLAUDE.md
 
+# The reference lives on GitHub, where the README links to it and Mermaid
+# renders. screenshots/ must stay in: pub.dev reads the images from the package.
+docs/
+
 # --- Mirror of the root .gitignore (see the note above) ---
 # Dart
 .dart_tool/
@@ -28,3 +32,8 @@ pubspec.lock
 
 # macOS
 .DS_Store
+
+# Coverage
+.coverage/
+coverage/
+lcov.info
