@@ -23,6 +23,7 @@ const _knownKeys = {
   'test_imports',
   'test_import_prefixes',
   'ignored_files',
+  'ignored_dependencies',
   'report_roots',
   'feature_depth',
   'tiers',
@@ -129,6 +130,11 @@ class TidyConfig {
   /// subfolder — is declared here rather than reported forever.
   final List<String> reportRoots;
 
+  /// Dependencies `--report` never calls unused or dev-only: packages used
+  /// without a Dart import — a font, a code generator, a platform plugin —
+  /// that the check cannot see being used.
+  final List<String> ignoredDependencies;
+
   /// How many folders under `lib/` make a feature in `--report`'s coupling
   /// metrics — `lib/src/` looked through. 1 splits `lib/auth` from
   /// `lib/core`; the common `lib/features/<name>/` layout wants 2.
@@ -204,6 +210,7 @@ class TidyConfig {
     this.relativeImports = false,
     this.packageImports = false,
     this.reportRoots = const [],
+    this.ignoredDependencies = const [],
     this.featureDepth = 1,
     this.attachComments = false,
     this.issues = const [],
@@ -351,6 +358,7 @@ class TidyConfig {
       packageImports: packageImports,
       attachComments: _readBool(config, 'attach_comments', issues) ?? false,
       reportRoots: _readStrings(config, 'report_roots', issues),
+      ignoredDependencies: _readStrings(config, 'ignored_dependencies', issues),
       featureDepth: _readFeatureDepth(config, issues),
       groupProjectByFolderDepth:
           _readInt(config, 'group_project_by_folder_depth', issues) ?? 0,

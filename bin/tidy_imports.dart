@@ -12,6 +12,7 @@ import 'package:yaml/yaml.dart';
 import 'package:tidy_imports/args.dart' as local_args;
 import 'package:tidy_imports/config.dart';
 import 'package:tidy_imports/config_edit.dart';
+import 'package:tidy_imports/dependencies.dart';
 import 'package:tidy_imports/doctor.dart';
 import 'package:tidy_imports/files.dart' as files;
 import 'package:tidy_imports/graph.dart';
@@ -343,6 +344,7 @@ void main(List<String> args) {
       patterns: argResults.rest,
       ignoreMatchers: ignoreMatchers,
       reportRoots: config.reportRoots,
+      ignoredDependencies: config.ignoredDependencies,
       failOnFindings: exitOnChange,
       format: argResults['format'] as String,
       featureDepth: featureDepth,
@@ -575,6 +577,7 @@ int _report(
   required List<String> patterns,
   required List<RegExp> ignoreMatchers,
   required List<String> reportRoots,
+  required List<String> ignoredDependencies,
   required bool failOnFindings,
   required String format,
   required int featureDepth,
@@ -692,7 +695,29 @@ int _report(
   final scope = directives.keys.where(inScope).toList();
   final groups = graph.cycles().where((g) => g.any(inScope)).toList();
   final dead = graph.unreachable(roots: roots).where(inScope).toList();
-  final findings = groups.length + dead.length;
+
+  // The same directives, read against pubspec.yaml. A directory with a
+  // pubspec of its own — a sub-package, an example app — answers to that one.
+  final audit = auditDependencies(
+    pubspec,
+    directivesByFile: directives,
+    ignored: ignoredDependencies,
+    otherPackages: [
+      ...packages.keys,
+      for (final dir in files.reportDirectories)
+        if (File('$currentPath/$dir/pubspec.yaml').existsSync()) dir,
+    ],
+  );
+  // A pattern narrows the files printed: a dev-only package is reported where
+  // an in-scope file imports it. An unused dependency has no file to narrow
+  // by — it belongs to the package — so it is always reported.
+  final dependencies = DependencyAudit(audit.unused, {
+    for (final entry in audit.devOnly.entries)
+      if (entry.value.any(inScope))
+        entry.key: entry.value.where(inScope).toList(),
+  });
+
+  final findings = groups.length + dead.length + dependencies.findings;
 
   // A drawing is of the library — what the architecture is made of. Tests,
   // tools and examples still count as importers above; drawn, they would bury
@@ -707,6 +732,7 @@ int _report(
         cycles: groups,
         unreachable: dead,
         featureDepth: featureDepth,
+        dependencies: dependencies.toJson(),
       )));
     case 'dot':
       stdout.write(toDot(
@@ -735,6 +761,7 @@ int _report(
         files: directives.length,
         groups: groups,
         dead: dead,
+        dependencies: dependencies,
         scope: scope,
         featureDepth: featureDepth,
         findings: findings,
@@ -743,7 +770,7 @@ int _report(
 
   if (failOnFindings && findings > 0) {
     stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
-        'in the import graph. Failing because --exit-if-changed was passed.');
+        'in the imports. Failing because --exit-if-changed was passed.');
     return 1;
   }
   return 0;
@@ -756,6 +783,7 @@ void _printReport(
   required int files,
   required List<List<String>> groups,
   required List<String> dead,
+  required DependencyAudit dependencies,
   required List<String> scope,
   required int featureDepth,
   required int findings,
@@ -787,6 +815,35 @@ void _printReport(
     }
     stdout.writeln('┃     (build_runner, reflection and dynamic loading are '
         'invisible here — read before deleting)');
+  }
+
+  final unused = dependencies.unused;
+  final devOnly = dependencies.devOnly;
+  if (unused.isEmpty && devOnly.isEmpty) {
+    stdout.writeln('┃  ${'✔'.green()} pubspec.yaml agrees with the imports');
+  }
+  if (unused.isNotEmpty) {
+    stdout.writeln('┃  ${'!'.yellow()} ${unused.length} '
+        '${unused.length == 1 ? 'dependency' : 'dependencies'} in pubspec.yaml '
+        'nothing imports:');
+    for (final package in unused) {
+      stdout.writeln('┃     $package');
+    }
+    stdout.writeln('┃     (a font, a code generator or a platform plugin is '
+        'used without an import — keep it with ignored_dependencies)');
+  }
+  if (devOnly.isNotEmpty) {
+    stdout.writeln('┃  ${'✖'.red()} ${devOnly.length} '
+        '${devOnly.length == 1 ? 'package' : 'packages'} imported under lib/ '
+        'or bin/ but declared only in dev_dependencies:');
+    for (final entry in devOnly.entries) {
+      final shown = entry.value.take(3).join(', ');
+      final more =
+          entry.value.length > 3 ? ' (+${entry.value.length - 3} more)' : '';
+      stdout.writeln('┃     ${entry.key} — $shown$more');
+    }
+    stdout.writeln('┃     (it builds here, where dev dependencies resolve; '
+        'nobody who depends on this package can — move it to dependencies)');
   }
 
   _printMetrics(graph, scope: scope, depth: featureDepth);

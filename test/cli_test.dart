@@ -955,6 +955,63 @@ tidy_imports:
       );
     });
 
+    test('names a dependency nothing imports, and one shipped as dev-only', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  http: any
+  intl: any
+dev_dependencies:
+  mocktail: any
+''');
+      libFile('main.dart').writeAsStringSync(
+        "import 'package:http/http.dart';\n"
+        "import 'package:mocktail/mocktail.dart';\n"
+        'void main() {}\n',
+      );
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, contains('1 dependency in pubspec.yaml nothing '));
+      expect(result.stdout, contains('     intl'));
+      expect(result.stdout, contains('mocktail — lib/main.dart'));
+    });
+
+    test('ignored_dependencies keeps a dependency out of the report', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  flutter_native_splash: any
+tidy_imports:
+  ignored_dependencies:
+    - flutter_native_splash
+''');
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}');
+      expect(result.stdout, contains('pubspec.yaml agrees with the imports'));
+    });
+
+    test('--format=json carries the dependency audit', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  intl: any
+''');
+      libFile('main.dart').writeAsStringSync('void main() {}\n');
+
+      final report = jsonDecode(out(['--report', '--format=json']))
+          as Map<String, Object?>;
+
+      expect(report['dependencies'], {
+        'unused': ['intl'],
+        'devOnly': <Object?>[],
+      });
+    });
+
     test('an unknown --format is an error line', () {
       final result = run(['--report', '--format=svg']);
 

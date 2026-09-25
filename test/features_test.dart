@@ -839,6 +839,8 @@ ignored_files:
   - \\.g\\.dart\$
 report_roots:
   - /lib/app/bootstrap.dart
+ignored_dependencies:
+  - flutter_native_splash
 feature_depth: 2
 tiers:
   - name: "Company imports:"

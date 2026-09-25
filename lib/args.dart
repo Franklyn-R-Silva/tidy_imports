@@ -92,7 +92,9 @@ Run modes
                                  into tidy_imports.yaml or the pubspec block.
       --report                   Read the project's own import graph and say
                                  what it found: files that import each other,
-                                 files under lib/ no entry point reaches, the
+                                 files under lib/ no entry point reaches,
+                                 dependencies nothing imports, dev-only
+                                 packages imported from lib/ or bin/, the
                                  most imported files and how the features
                                  couple. Sorts nothing, writes nothing.
                                  Patterns and ignored_files narrow what is
