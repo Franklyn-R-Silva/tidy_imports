@@ -343,6 +343,115 @@ void main() {}
     });
   });
 
+  group('block comments inside a directive', () {
+    test('a block comment after the semicolon keeps it a directive', () {
+      // The terminator test looked at the last character of the line, which
+      // here is `/`: the import never ended, and slid out of the block.
+      final result = sortImports(
+        [
+          "import 'package:demo/z.dart'; /* why z */",
+          "import 'dart:io';",
+          '',
+          'void main() {}',
+        ],
+        'demo',
+        false,
+        false,
+        false,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart'; /* why z */
+
+void main() {}
+''',
+      );
+    });
+
+    test('a block comment still open at the semicolon travels whole', () {
+      final result = sortImports(
+        [
+          "import 'package:demo/z.dart'; /* a note",
+          '   that goes on */',
+          "import 'dart:io';",
+          '',
+          'void main() {}',
+        ],
+        'demo',
+        false,
+        false,
+        false,
+      );
+
+      expect(
+        result.sortedFile,
+        '''
+// Dart imports:
+import 'dart:io';
+
+// Project imports:
+import 'package:demo/z.dart'; /* a note
+   that goes on */
+
+void main() {}
+''',
+        reason: 'leaving the tail behind would turn `that goes on */` into '
+            'code',
+      );
+    });
+
+    test('a path quoted in a block comment is not rewritten', () {
+      final result = sortImports(
+        ["import 'b.dart' /* was 'gone.dart' */;", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+        packageImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("import 'package:demo/b.dart' /* was 'gone.dart' */;"),
+      );
+    });
+
+    test('a path quoted in a block comment is not a graph edge', () {
+      expect(
+        directiveUris([
+          "import 'a.dart' /* was 'b.dart' */;",
+          "import 'c.dart' /* see",
+          "    'd.dart' */ show C;",
+        ]),
+        ['a.dart', 'c.dart'],
+      );
+    });
+
+    test('an apostrophe inside a double-quoted uri is part of it', () {
+      expect(directiveUris(['import "it\'s.dart";']), ["it's.dart"]);
+
+      final result = sortImports(
+        ['import "it\'s.dart";', "import 'b.dart';", '', 'void main() {}'],
+        'demo',
+        false,
+        false,
+        true,
+      );
+      expect(
+        result.sortedFile,
+        startsWith('import \'b.dart\';\nimport "it\'s.dart";\n'),
+        reason: "sorted by it's.dart, not by a truncated `it`",
+      );
+    });
+  });
+
   group('leading // ignore: pragmas', () {
     test('an // ignore: pragma travels with its import', () {
       final lines = [

@@ -34,11 +34,18 @@ import 'stub.dart'
     if (dart.library.js_interop) 'web_impl.dart';
 ```
 
-**A trailing comment.** Sorted normally, with the comment kept on its line:
+**A trailing comment** — line or block, even a block that runs on to the next
+line. Sorted normally, with the comment kept where it was; a path quoted inside
+it is never read as an import, never rewritten, and never becomes an edge in
+the graph:
 
 ```dart
 import 'package:app/x.dart'; // pinned until #412 lands
+import 'package:app/y.dart'; /* was 'package:app/old_y.dart' */
 ```
+
+**A double-quoted URI** holds whatever single quotes it likes:
+`import "it's.dart";` is sorted as `it's.dart`.
 
 **`// ignore:` above an import** travels with it. Sorting used to tear the
 comment off and leave it below the block, silently switching the lint

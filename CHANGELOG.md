@@ -54,6 +54,13 @@ but was filed as relative.
   through a Flutter app's `.plugin_symlinks/`
 * `--relative-imports` rewrites every URI of a directive: one on the line after
   the keyword, and every target of a conditional import
+* a block comment after a directive's semicolon — `import 'x.dart'; /* why */`
+  — no longer stops it being a directive: it used to slide out of the sorted
+  block, and `--report` lost its edge
+* a path quoted inside a comment in a directive is never read as a URI: it
+  was a phantom graph edge, and counted as a dependency in use
+* a double-quoted URI with an apostrophe (`"it's.dart"`) is read whole, not
+  cut at the apostrophe
 * `lcov.info` is no longer published in the package
 
 ### Behaviour change

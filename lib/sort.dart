@@ -543,8 +543,13 @@ final _mainDeclaration = RegExp(
   r'^(?:(?:Future<[^>]*>|FutureOr<[^>]*>|void|dynamic)\s+)?main\s*\(',
 );
 
-/// Matches the quoted URI of a directive.
-final _uriPattern = RegExp('''['"]([^'"]+)['"]''');
+/// Matches the quoted URI of a directive — in group 1 when single-quoted, in
+/// group 2 when double-quoted. A quote never closes a string opened by the
+/// other kind: `"it's.dart"` is one URI, not `it`.
+final _uriPattern = RegExp(r"'([^']+)'" '|' r'"([^"]+)"');
+
+/// The URI [match] of [_uriPattern] holds.
+String _uriOf(RegExpMatch match) => match.group(1) ?? match.group(2)!;
 
 /// Whether a line opens an `import` / an `export`.
 ///
@@ -578,16 +583,26 @@ bool _isIgnorePragma(String line) {
 /// How many lines the directive starting at [start] spans, or 0 when it never
 /// terminates — the caller then treats the line as ordinary source, which is
 /// what happened to every multi-line directive before this scanner existed.
+///
+/// The `;` is looked for in the directive's code, with every comment masked
+/// out: `import 'a.dart'; /* why */` used to end in `/`, never terminated, and
+/// slid out of the sorted block. A block comment still open at that `;` keeps
+/// the directive going until it closes, or the comment's tail would be left
+/// behind as code.
 int _scanDirective(List<String> lines, int start) {
   final limit = start + _maxDirectiveLines;
+  final mask = _CommentMask();
+  var terminated = false;
   for (var i = start; i < lines.length && i < limit; i++) {
     // A directive never contains the start of another one. Meeting one means
     // the first never terminated, and it is better to give that one up than
     // to swallow the second into it.
-    if (i > start && _startsDirectiveKeyword(lines[i])) return 0;
-    if (_stripTrailingComment(lines[i]).endsWith(';')) {
-      return i - start + 1;
+    if (i > start && !mask.inComment && _startsDirectiveKeyword(lines[i])) {
+      return 0;
     }
+    final code = mask.mask(lines[i]).trimRight();
+    terminated = terminated || code.endsWith(';');
+    if (terminated && !mask.inComment) return i - start + 1;
   }
   return 0;
 }
@@ -612,44 +627,82 @@ final _fileDirective = RegExp(r'^(?:import|export|part)(?:\s|$)');
 ///
 /// That is the default one plus each `if (dart.library.x) 'uri'` target of a
 /// conditional import or export. `show`, `hide`, `as` and `deferred` take bare
-/// identifiers, so every quoted string in a directive is a URI — once trailing
-/// comments are stripped, so a `// see 'other.dart'` is not read as one.
-List<String> _directiveTargets(List<String> body) => [
-      for (final line in body)
-        for (final match in _uriPattern.allMatches(_stripTrailingComment(line)))
-          match.group(1)!,
-    ];
+/// identifiers, so every quoted string in a directive's *code* is a URI.
+/// Comments are masked out first — a `// see 'other.dart'` or a
+/// `/* was 'old.dart' */` is not an import, and read as one it became a graph
+/// edge and a dependency in use.
+List<String> _directiveTargets(List<String> body) {
+  final mask = _CommentMask();
+  return [
+    for (final line in body)
+      for (final match in _uriPattern.allMatches(mask.mask(line)))
+        _uriOf(match),
+  ];
+}
 
-/// [line] without its trailing `//` comment.
+/// Masks the comments out of directive source, one line at a time: every
+/// character inside a `//` comment or a `/* */` block becomes a space, so a
+/// quoted path in a comment is not read as a URI — and since the length never
+/// changes, an index into the result is an index into the line.
 ///
-/// The scan tracks string literals, so neither a `//` inside a quoted URI nor
-/// a `;` inside a comment can fool the terminator test in [_scanDirective].
-String _stripTrailingComment(String line) {
-  String? quote;
-  var escaped = false;
-  for (var i = 0; i < line.length; i++) {
-    final char = line[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (quote != null) {
-      if (char == r'\') {
-        escaped = true;
-      } else if (char == quote) {
-        quote = null;
+/// Block comments nest in Dart and may span lines, so the depth is carried
+/// from one [mask] call to the next. String literals are tracked, so a `//`
+/// or `/*` inside a quoted URI is not a comment.
+class _CommentMask {
+  var _depth = 0;
+
+  /// Whether the last line masked ended inside a block comment.
+  bool get inComment => _depth > 0;
+
+  String mask(String line) {
+    final out = StringBuffer();
+    String? quote;
+    var escaped = false;
+    var i = 0;
+    bool at(String pair) =>
+        i + 1 < line.length && line[i] == pair[0] && line[i + 1] == pair[1];
+
+    while (i < line.length) {
+      final char = line[i];
+      if (_depth > 0) {
+        if (at('*/') || at('/*')) {
+          _depth += at('/*') ? 1 : -1;
+          out.write('  ');
+          i += 2;
+        } else {
+          out.write(' ');
+          i++;
+        }
+        continue;
       }
-      continue;
+      if (quote != null) {
+        out.write(char);
+        if (escaped) {
+          escaped = false;
+        } else if (char == r'\') {
+          escaped = true;
+        } else if (char == quote) {
+          quote = null;
+        }
+        i++;
+        continue;
+      }
+      if (char == "'" || char == '"') {
+        quote = char;
+      } else if (at('//')) {
+        out.write(' ' * (line.length - i));
+        break;
+      } else if (at('/*')) {
+        _depth++;
+        out.write('  ');
+        i += 2;
+        continue;
+      }
+      out.write(char);
+      i++;
     }
-    if (char == "'" || char == '"') {
-      quote = char;
-      continue;
-    }
-    if (char == '/' && i + 1 < line.length && line[i + 1] == '/') {
-      return line.substring(0, i).trimRight();
-    }
+    return out.toString();
   }
-  return line.trimRight();
 }
 
 /// Sorts the way `directives_ordering` reads a file: `dart:` first, then
@@ -734,16 +787,18 @@ _Directive _rewriteUris(
   String? Function(String uri) rewrite,
 ) {
   var changed = false;
+  final mask = _CommentMask();
   final lines = [
     for (final line in directive.lines)
       () {
-        // The trailing comment is cut off the end, so every index into the
-        // code is an index into the line as well.
-        final code = _stripTrailingComment(line);
+        // Comments are masked to spaces, never cut, so every index into the
+        // code is an index into the line as well — and a path quoted in a
+        // `/* was 'old.dart' */` is never rewritten.
+        final code = mask.mask(line);
         final out = StringBuffer();
         var last = 0;
         for (final match in _uriPattern.allMatches(code)) {
-          final replacement = rewrite(match.group(1)!);
+          final replacement = rewrite(_uriOf(match));
           if (replacement == null) continue;
           changed = true;
           out
@@ -948,7 +1003,10 @@ class _Directive {
 
   /// The directive's source without trailing comments — what custom tier
   /// patterns are matched against.
-  String get code => lines.map(_stripTrailingComment).join(' ');
+  String get code {
+    final mask = _CommentMask();
+    return lines.map((line) => mask.mask(line).trimRight()).join(' ');
+  }
 
   /// Identity for duplicate detection: the whole directive, `// ignore:` lines
   /// included, with runs of whitespace collapsed.
