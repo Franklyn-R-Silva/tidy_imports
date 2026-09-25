@@ -36,7 +36,7 @@ lints it finds:
 ┃  ! `always_use_package_imports` (from analysis_options.yaml) is on.
 ┃    `package_imports` rewrites the relative imports under lib/ into the
 ┃    `package:` form it asks for.
-┃      → package_imports: true
+┃      → package_imports: true, relative_imports: false
 ┗━━ ✖ 1 fight, 1 suggestion
 
 Add to the tidy_imports: block of pubspec.yaml — or run again with --apply:
@@ -45,6 +45,7 @@ tidy_imports:
   flat: true
   sort_exports: true
   package_imports: true
+  relative_imports: false
 ```
 
 It says three kinds of thing:
@@ -154,6 +155,8 @@ import 'widgets/card.dart';       →  import 'package:my_app/features/home/widg
   `show`/`hide` clause and a trailing comment survive untouched.
 - If a rewrite produces an import you already had, `--remove-duplicates` folds
   the two.
+- `export` directives are rewritten only when `--sort-exports` moves them.
+  Neither lint reads exports, so one left as written is not a warning.
 
 The two lints are opposites — the Dart team ships both and expects you to pick
 one — so the two options are never applied together. A config asking for both

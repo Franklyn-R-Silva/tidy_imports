@@ -37,6 +37,7 @@ export 'graph_export.dart'
     show
         drawnEdges,
         mermaidEdgeLimit,
+        ranked,
         reportJson,
         reportSchemaVersion,
         toDot,
@@ -47,6 +48,7 @@ export 'files.dart'
     show
         compilePatterns,
         dartFiles,
+        filesNamed,
         reportDirectories,
         standardDirectories,
         toPosix;

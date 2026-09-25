@@ -218,7 +218,7 @@ linter:
       final finding = check(on(['prefer_relative_imports'])).single;
 
       expect(finding.kind, FindingKind.suggestion);
-      expect(finding.fix, {'relative_imports': true});
+      expect(finding.fix, {'relative_imports': true, 'package_imports': false});
     });
 
     test('prefer_relative_imports fights package_imports', () {
@@ -243,7 +243,7 @@ linter:
       final finding = check(on(['always_use_package_imports'])).single;
 
       expect(finding.kind, FindingKind.suggestion);
-      expect(finding.fix, {'package_imports': true});
+      expect(finding.fix, {'package_imports': true, 'relative_imports': false});
     });
 
     test('always_use_package_imports fights relative_imports', () {

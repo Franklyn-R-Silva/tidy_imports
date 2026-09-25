@@ -18,7 +18,7 @@ dart run tidy_imports --report
 ┃     (build_runner, reflection and dynamic loading are invisible here — read before deleting)
 ┃  ! 1 dependency in pubspec.yaml nothing imports:
 ┃     intl
-┃  ✖ 1 package imported under lib/ or bin/ but declared only in dev_dependencies:
+┃  ✖ 1 package imported under lib/, bin/ or hook/ but declared only in dev_dependencies:
 ┃     mocktail — lib/features/home/home_page.dart
 ┃  Most imported:
 ┃     4  lib/core/theme.dart
@@ -60,10 +60,16 @@ no `import`, `export` or `part` anywhere in the package — tests included, so a
 package used only by the tests is not reported here. SDK entries
 (`flutter: {sdk: flutter}`) and `cupertino_icons` are never reported.
 
-**A dev dependency shipped from `lib/` or `bin/`.** It builds in your own
+**A dev dependency shipped from `lib/`, `bin/` or `hook/`.** It builds in your own
 package, where dev dependencies resolve — which is exactly what makes it easy
-to miss. Nobody who depends on your package can build it, and a Flutter release
-build drops dev-only plugins too. Move it to `dependencies`.
+to miss. Pub never resolves a package's dev dependencies for the packages that
+depend on it, so nobody who depends on yours can build it. Move it to
+`dependencies`.
+
+Build hooks under `hook/` run for every package that depends on yours, so they
+count as shipped code too. With `flutter: generate: true`, `intl` is never
+reported unused: `flutter gen-l10n` writes the code that imports it under
+`.dart_tool/`, where no scan of the project sees it.
 
 A font, a code generator or a platform plugin is used without a Dart import, so
 the check cannot see it being used. Keep those out with:
@@ -86,7 +92,7 @@ Anything you can run or publish, so it is unreferenced by definition:
 - `lib/main.dart`, and every `lib/main_*.dart` flavour
 - any file under `lib/` that declares a top-level `main()`
 - every file outside `lib/` — tests, `bin/`, `tool/`, `example/`, `web/`,
-  `benchmark/`
+  `benchmark/`, `hook/`
 - for a **library** — no `publish_to: none`, no `lib/main.dart` — every file
   outside `lib/src/`: pub convention makes that the public surface consumers
   import
@@ -270,8 +276,13 @@ tidy_imports:
     - /lib/l10n/
 ```
 
-An unused dependency belongs to the package, not to a file, so it is reported
-whatever the pattern.
+What a pattern narrows, precisely:
+
+| Narrowed to the files in scope | Always the whole package |
+|---|---|
+| Dead files, dev-only imports, most imported / imports the most, the drawn nodes, JSON `files` | Each cycle that touches the scope, listed whole — a cycle cut down to the files in scope is not a cycle any more |
+| | Feature metrics and coupling — a feature's coupling is to everything outside it |
+| | Unused dependencies — they belong to the package, not to a file |
 
 ## In CI
 

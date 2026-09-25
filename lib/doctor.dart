@@ -244,12 +244,15 @@ List<DoctorFinding> diagnose(
         const {'package_imports': false, 'relative_imports': true},
       ));
     } else if (!config.relativeImports) {
+      // The opposite key is set too: a config asking for both reads as both
+      // off, and writing only this one would leave the pair — and the
+      // suggestion — exactly where they were.
       findings.add(DoctorFinding(
         FindingKind.suggestion,
         '${rule('prefer_relative_imports')} is on. `relative_imports` '
         'rewrites your own `package:` imports under lib/ into the relative '
         'form it asks for.',
-        const {'relative_imports': true},
+        const {'relative_imports': true, 'package_imports': false},
       ));
     }
   } else if (wantsPackage) {
@@ -267,7 +270,7 @@ List<DoctorFinding> diagnose(
         '${rule('always_use_package_imports')} is on. `package_imports` '
         'rewrites the relative imports under lib/ into the `package:` form it '
         'asks for.',
-        const {'package_imports': true},
+        const {'package_imports': true, 'relative_imports': false},
       ));
     }
   }

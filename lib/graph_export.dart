@@ -17,13 +17,17 @@ const mermaidEdgeLimit = 500;
 /// [featureDepth]; an edge inside an import cycle is red, and a file in
 /// [unreachable] is dashed. Ids are `n0…` in path order, so the same graph
 /// always prints the same text and a diff of two reports means something.
+///
+/// [cycles] is what [ImportGraph.cycles] returns; pass it when it is already
+/// at hand, or it is worked out again.
 String toMermaid(
   ImportGraph graph, {
   required Iterable<String> nodes,
   Set<String> unreachable = const {},
   int featureDepth = 1,
+  List<List<String>>? cycles,
 }) {
-  final layout = _Layout(graph, nodes, featureDepth);
+  final layout = _Layout(graph, nodes, featureDepth, cycles ?? graph.cycles());
   final out = StringBuffer('flowchart LR\n');
 
   var cluster = 0;
@@ -65,7 +69,7 @@ String toMermaid(
 /// How many edges [toMermaid] would draw for the same [nodes] — for warning
 /// before a diagram crosses [mermaidEdgeLimit].
 int drawnEdges(ImportGraph graph, Iterable<String> nodes) =>
-    _Layout(graph, nodes, 1).edges.length;
+    _Layout(graph, nodes, 1, const []).edges.length;
 
 /// [graph] in Graphviz DOT, for `dot -Tsvg`: the same drawing as [toMermaid],
 /// without a size limit, with features as clusters.
@@ -74,8 +78,9 @@ String toDot(
   required Iterable<String> nodes,
   Set<String> unreachable = const {},
   int featureDepth = 1,
+  List<List<String>>? cycles,
 }) {
-  final layout = _Layout(graph, nodes, featureDepth);
+  final layout = _Layout(graph, nodes, featureDepth, cycles ?? graph.cycles());
   final out = StringBuffer()
     ..writeln('digraph imports {')
     ..writeln('  rankdir=LR;')
@@ -116,8 +121,11 @@ String toDot(
 
 /// Everything `--report` knows, as a JSON-ready map.
 ///
-/// [files] is what the report is about — the in-scope files, library or not
-/// — and every list in the document is limited to them. The graph itself is
+/// [files] is what the report is about — the in-scope files, library or not.
+/// `files`, `unreachable` and the two ranked lists hold only those; each of
+/// [cycles] is a whole group, since a cycle cut to the files in scope is not
+/// a cycle any more; `features` and `coupling` describe the package, because
+/// a feature's coupling is to everything outside it. The graph itself is
 /// always read whole: fan-in counts an importer that is out of scope, since
 /// the import is real either way. [top] caps the two ranked lists.
 Map<String, Object?> reportJson(
@@ -141,19 +149,10 @@ Map<String, Object?> reportJson(
     }
   }
 
-  List<Map<String, Object>> ranked(Map<String, int> counts) {
-    final entries = counts.entries
-        .where((e) => e.value > 0 && scope.contains(e.key))
-        .toList()
-      ..sort((a, b) {
-        final byCount = b.value.compareTo(a.value);
-        return byCount != 0 ? byCount : a.key.compareTo(b.key);
-      });
-    return [
-      for (final entry in entries.take(top))
-        {'path': entry.key, 'count': entry.value},
-    ];
-  }
+  List<Map<String, Object>> top10(Map<String, int> counts) => [
+        for (final entry in ranked(counts, scope: scope, top: top))
+          {'path': entry.key, 'count': entry.value},
+      ];
 
   return {
     'schemaVersion': reportSchemaVersion,
@@ -177,8 +176,8 @@ Map<String, Object?> reportJson(
         if (scope.contains(file)) file,
     ],
     'metrics': {
-      'mostImported': ranked(fanIn),
-      'mostImporting': ranked(fanOut),
+      'mostImported': top10(fanIn),
+      'mostImporting': top10(fanOut),
       'features': [
         for (final feature in graph.features(featureDepth))
           {
@@ -198,6 +197,23 @@ Map<String, Object?> reportJson(
   };
 }
 
+/// The [top] highest counts among the files in [scope], highest first and by
+/// path within a tie, leaving out zeroes — the "most imported" and "imports
+/// the most" lists, shared by the text report and the JSON so the two cannot
+/// disagree.
+List<MapEntry<String, int>> ranked(
+  Map<String, int> counts, {
+  required Set<String> scope,
+  int top = 10,
+}) =>
+    (counts.entries.where((e) => e.value > 0 && scope.contains(e.key)).toList()
+          ..sort((a, b) {
+            final byCount = b.value.compareTo(a.value);
+            return byCount != 0 ? byCount : a.key.compareTo(b.key);
+          }))
+        .take(top)
+        .toList();
+
 /// What both drawings share: which files, grouped how, joined by which edges.
 class _Layout {
   /// Drawn files, in path order.
@@ -214,7 +230,12 @@ class _Layout {
 
   final Map<String, int> _cycleOf;
 
-  factory _Layout(ImportGraph graph, Iterable<String> nodes, int depth) {
+  factory _Layout(
+    ImportGraph graph,
+    Iterable<String> nodes,
+    int depth,
+    List<List<String>> cycles,
+  ) {
     final files = nodes.toSet().toList()..sort();
     final drawn = files.toSet();
 
@@ -237,7 +258,7 @@ class _Layout {
     ];
 
     final cycleOf = <String, int>{};
-    for (final (index, group) in graph.cycles().indexed) {
+    for (final (index, group) in cycles.indexed) {
       for (final file in group) {
         cycleOf[file] = index;
       }

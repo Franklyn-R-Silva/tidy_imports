@@ -95,6 +95,13 @@ void main(List<String> args) {
     );
     exit(1);
   }
+  if (doctor && argResults['ignore-config'] == true) {
+    stderr.writeln(
+      'Error: --doctor judges the configuration, and --ignore-config leaves '
+      'it none to judge.',
+    );
+    exit(1);
+  }
   for (final option in const ['format', 'feature-depth']) {
     if (argResults.wasParsed(option) && argResults['report'] != true) {
       stderr.writeln(
@@ -596,9 +603,25 @@ int _report(
       stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under '
           '${dirs.join(', ')} — nothing to report');
     } else {
-      // The artifact is the whole of stdout, so the sentence goes elsewhere.
+      // The artifact is the whole of stdout, so the sentence goes elsewhere —
+      // and the artifact is still written, empty: `| jq .` on nothing fails,
+      // on a report with no files it does not.
       stderr.writeln('No Dart files under ${dirs.join(', ')} — nothing to '
           'report.');
+      const empty = ImportGraph({});
+      final document = reportJson(
+        empty,
+        packageName: packageName,
+        files: const [],
+        cycles: const [],
+        unreachable: const [],
+        featureDepth: featureDepth,
+      );
+      stdout.write(switch (format) {
+        'json' => '${const JsonEncoder.withIndent('  ').convert(document)}\n',
+        'dot' => toDot(empty, nodes: const [], cycles: const []),
+        _ => toMermaid(empty, nodes: const [], cycles: const []),
+      });
     }
     if (failOnFindings) {
       stderr.writeln('🚨 --exit-if-changed with nothing to check. '
@@ -693,7 +716,10 @@ int _report(
       !ignoreMatchers.any((m) => m.hasMatch('/$path'));
 
   final scope = directives.keys.where(inScope).toList();
-  final groups = graph.cycles().where((g) => g.any(inScope)).toList();
+  // Tarjan runs once: the drawings colour every cycle, the text lists the
+  // groups that touch the scope.
+  final cycles = graph.cycles();
+  final groups = cycles.where((g) => g.any(inScope)).toList();
   final dead = graph.unreachable(roots: roots).where(inScope).toList();
 
   // The same directives, read against pubspec.yaml. A directory with a
@@ -740,6 +766,7 @@ int _report(
         nodes: drawn,
         unreachable: dead.toSet(),
         featureDepth: featureDepth,
+        cycles: cycles,
       ));
     case 'mermaid':
       final edges = drawnEdges(graph, drawn);
@@ -754,6 +781,7 @@ int _report(
         nodes: drawn,
         unreachable: dead.toSet(),
         featureDepth: featureDepth,
+        cycles: cycles,
       ));
     default:
       _printReport(
@@ -834,8 +862,8 @@ void _printReport(
   }
   if (devOnly.isNotEmpty) {
     stdout.writeln('┃  ${'✖'.red()} ${devOnly.length} '
-        '${devOnly.length == 1 ? 'package' : 'packages'} imported under lib/ '
-        'or bin/ but declared only in dev_dependencies:');
+        '${devOnly.length == 1 ? 'package' : 'packages'} imported under lib/, '
+        'bin/ or hook/ but declared only in dev_dependencies:');
     for (final entry in devOnly.entries) {
       final shown = entry.value.take(3).join(', ');
       final more =
@@ -862,16 +890,9 @@ void _printMetrics(
   const top = 5;
   final inScope = scope.toSet();
 
-  void ranked(String title, Map<String, int> counts) {
-    final entries = counts.entries
-        .where((e) => e.value > 0 && inScope.contains(e.key))
-        .toList()
-      ..sort((a, b) {
-        final byCount = b.value.compareTo(a.value);
-        return byCount != 0 ? byCount : a.key.compareTo(b.key);
-      });
-    if (entries.isEmpty) return;
-    final shown = entries.take(top).toList();
+  void list(String title, Map<String, int> counts) {
+    final shown = ranked(counts, scope: inScope, top: top);
+    if (shown.isEmpty) return;
     final width = '${shown.first.value}'.length;
     stdout.writeln('┃  $title');
     for (final entry in shown) {
@@ -879,20 +900,35 @@ void _printMetrics(
     }
   }
 
-  ranked('Most imported:', graph.fanIn());
-  ranked('Imports the most:', graph.fanOut());
+  list('Most imported:', graph.fanIn());
+  list('Imports the most:', graph.fanOut());
 
   final features = graph.features(depth);
   if (features.length > 1) {
-    final width = features.map((f) => f.name.length).reduce(max);
+    // A large app has dozens of features; the ones that matter here are the
+    // most coupled, and the JSON format lists every one.
+    const shownFeatures = 10;
+    final shown = features.length <= shownFeatures
+        ? features
+        : ((features.toList()
+              ..sort((a, b) =>
+                  (b.afferent + b.efferent).compareTo(a.afferent + a.efferent)))
+            .take(shownFeatures)
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name)));
+    final width = shown.map((f) => f.name.length).reduce(max);
     stdout.writeln('┃  Features at feature_depth $depth — files, imports in '
         'and out, instability:');
-    for (final feature in features) {
+    for (final feature in shown) {
       final instability = feature.instability?.toStringAsFixed(2) ?? '—';
       stdout.writeln('┃     ${feature.name.padRight(width)}  '
           '${'${feature.files}'.padLeft(4)} files  '
           'in ${'${feature.afferent}'.padLeft(3)}  '
           'out ${'${feature.efferent}'.padLeft(3)}  I $instability');
+    }
+    if (shown.length < features.length) {
+      stdout.writeln('┃     (+${features.length - shown.length} less coupled '
+          '— --format=json lists every feature)');
     }
 
     final pairs = graph.coupling(depth).take(top).toList();
@@ -926,15 +962,13 @@ void _printMetrics(
 /// resolved, and its cycles and dead files were silently invisible.
 Map<String, String> _subPackages(String currentPath) {
   final found = <String, String>{};
-  final root = Directory('$currentPath/packages');
-  if (!root.existsSync()) return found;
-
-  for (final entity in root.listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('pubspec.yaml')) continue;
+  // The sorter's own walk: a `listSync(recursive: true)` here followed links,
+  // so a Flutter app's `.plugin_symlinks/` took the report into the pub cache.
+  for (final entity
+      in files.filesNamed(currentPath, 'packages', 'pubspec.yaml')) {
     final dir = files
         .toPosix(entity.parent.path.replaceFirst(currentPath, ''))
         .replaceFirst(RegExp('^/'), '');
-    if (dir.contains('/.') || dir.contains('/build/')) continue;
     try {
       final name = (loadYaml(entity.readAsStringSync()) as YamlMap?)?['name'];
       if (name is String) found[dir] = name;

@@ -94,9 +94,10 @@ Run modes
                                  what it found: files that import each other,
                                  files under lib/ no entry point reaches,
                                  dependencies nothing imports, dev-only
-                                 packages imported from lib/ or bin/, the
-                                 most imported files and how the features
-                                 couple. Sorts nothing, writes nothing.
+                                 packages imported from lib/, bin/ or hook/,
+                                 the most imported files and how the
+                                 features couple. Sorts nothing, writes
+                                 nothing.
                                  Patterns and ignored_files narrow what is
                                  printed, never what is read.
       --format=<text|mermaid|dot|json>

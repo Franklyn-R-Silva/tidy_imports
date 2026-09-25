@@ -94,6 +94,27 @@ dev_dependencies:
       expect(audit.unused, containsAll(['http', 'intl']));
     });
 
+    test('intl is not unused when flutter gen-l10n writes the code using it',
+        () {
+      final audit = auditDependencies(
+        pubspec('''
+name: app
+dependencies:
+  intl: any
+flutter:
+  generate: true
+'''),
+        directivesByFile: const {},
+      );
+
+      expect(
+        audit.unused,
+        isEmpty,
+        reason: 'the generated localizations import intl from .dart_tool/, '
+            'which no scan of the project sees',
+      );
+    });
+
     test('a pubspec without sections has nothing to report', () {
       final audit = auditDependencies(
         pubspec('name: app'),
@@ -126,6 +147,17 @@ dev_dependencies:
           'lib/testing/b.dart',
         ],
       });
+    });
+
+    test('a build hook runs for consumers, so it ships like lib/', () {
+      final audit = auditDependencies(
+        declared,
+        directivesByFile: {
+          'hook/build.dart': ['package:build_runner/build_runner.dart'],
+        },
+      );
+
+      expect(audit.devOnly.keys, ['build_runner']);
     });
 
     test('a dev dependency imported from test/ is where it belongs', () {

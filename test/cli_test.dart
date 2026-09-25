@@ -504,12 +504,33 @@ tidy_imports:
       expect(
         File('${temp.path}/pubspec.yaml').readAsStringSync(),
         'name: demo\n\ntidy_imports:\n'
-        '  flat: true\n  sort_exports: true\n  package_imports: true\n',
+        '  flat: true\n  sort_exports: true\n  package_imports: true\n'
+        '  relative_imports: false\n',
       );
 
       final again = run(['--doctor', '--exit-if-changed']);
       expect(again.exitCode, 0, reason: '${again.stdout}');
       expect(again.stdout, contains('Nothing to change'));
+    });
+
+    test('--apply settles a config that asked for both rewrites', () {
+      // The config reader applies neither of two opposite options, so the
+      // doctor saw both off and suggested one — and --apply wrote it next to
+      // the other, which was still on. Every later run was the same loop.
+      lints(['always_use_package_imports']);
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  relative_imports: true
+  package_imports: true
+''');
+
+      expect(run(['--doctor', '--apply']).exitCode, 0);
+
+      final again = run(['--doctor', '--exit-if-changed']);
+      expect(again.exitCode, 0, reason: '${again.stdout}${again.stderr}');
+      expect(again.stdout, contains('Nothing to change'));
+      expect(again.stderr, isNot(contains('both on')));
     });
 
     test('--apply edits a standalone tidy_imports.yaml when there is one', () {
@@ -521,7 +542,7 @@ tidy_imports:
 
       expect(
         standalone.readAsStringSync(),
-        'emojis: true\npackage_imports: true\n',
+        'emojis: true\npackage_imports: true\nrelative_imports: false\n',
       );
       expect(
           File('${temp.path}/pubspec.yaml').readAsStringSync(), 'name: demo\n');
@@ -580,6 +601,25 @@ tidy_imports:
 
       expect(result.exitCode, 1);
       expect(result.stderr, contains('--doctor'));
+    });
+
+    test('--doctor with --ignore-config is an error, and writes nothing', () {
+      // It would judge the defaults and --apply them over the real file.
+      lints(['prefer_relative_imports']);
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+tidy_imports:
+  package_imports: true
+''');
+
+      final result = run(['--doctor', '--ignore-config', '--apply']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--ignore-config'));
+      expect(
+        File('${temp.path}/pubspec.yaml').readAsStringSync(),
+        contains('package_imports: true'),
+      );
     });
 
     test('--doctor with --report is an error', () {
@@ -901,6 +941,21 @@ tidy_imports:
       expect(text, contains('lib/auth → lib/core  (1 import)'));
     });
 
+    test('the feature table keeps to the ten most coupled features', () {
+      // Twelve features: f0..f9 each import `core`, and lonely has no edge.
+      at('lib/core/c.dart').writeAsStringSync('class C {}\n');
+      at('lib/lonely/l.dart').writeAsStringSync('class L {}\n');
+      for (var i = 0; i < 10; i++) {
+        at('lib/f$i/x.dart').writeAsStringSync("import '../core/c.dart';\n");
+      }
+
+      final text = out(['--report']);
+
+      expect(text, contains('lib/core '));
+      expect(text, isNot(contains('lib/lonely ')));
+      expect(text, contains('(+2 less coupled — --format=json lists every'));
+    });
+
     test('--format=mermaid prints only the diagram', () {
       writeProject();
 
@@ -1010,6 +1065,35 @@ dependencies:
         'unused': ['intl'],
         'devOnly': <Object?>[],
       });
+    });
+
+    test('a dependency used only by a build hook is not unused', () {
+      File('${temp.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+dependencies:
+  hooks: any
+''');
+      at('hook/build.dart').writeAsStringSync(
+        "import 'package:hooks/hooks.dart';\nvoid main() {}\n",
+      );
+      libFile('demo.dart').writeAsStringSync('class Demo {}\n');
+
+      final result = run(['--report', '--exit-if-changed']);
+
+      expect(result.exitCode, 0, reason: '${result.stdout}');
+      expect(result.stdout, contains('pubspec.yaml agrees with the imports'));
+    });
+
+    test('--format=json with nothing to scan is still a document', () {
+      Directory('${temp.path}/lib').deleteSync(recursive: true);
+
+      final result = run(['--report', '--format=json']);
+
+      expect(result.exitCode, 0);
+      final report = jsonDecode(result.stdout as String) as Map;
+      expect(report['schemaVersion'], 1);
+      expect(report['files'], isEmpty);
+      expect(result.stderr, contains('nothing to report'));
     });
 
     test('an unknown --format is an error line', () {

@@ -11,13 +11,12 @@ class DependencyAudit {
   /// package. Sorted.
   final List<String> unused;
 
-  /// Package -> the `lib/` or `bin/` files that import it while it is
+  /// Package -> the `lib/`, `bin/` or `hook/` files that import it while it is
   /// declared only under `dev_dependencies:`. Sorted by package, then file.
   ///
   /// It compiles in the package itself, which is what makes it easy to miss:
-  /// the root package resolves its dev dependencies. Anyone who depends on
-  /// the package does not, and cannot build it; a Flutter release build drops
-  /// dev-only plugins too.
+  /// the root package resolves its dev dependencies. Pub never resolves them
+  /// for a package that depends on this one, so that package cannot build.
   final Map<String, List<String>> devOnly;
 
   const DependencyAudit(this.unused, this.devOnly);
@@ -58,7 +57,16 @@ DependencyAudit auditDependencies(
   final self = pubspec['name'];
   final dependencies = _section(pubspec['dependencies']);
   final devDependencies = _section(pubspec['dev_dependencies']);
-  final exempt = {...usedWithoutImport, ...ignored};
+  // `flutter: generate: true` has `flutter gen-l10n` write the code that
+  // imports `intl` — which it requires as a dependency — under `.dart_tool/`,
+  // where no scan of the project sees it.
+  final flutter = pubspec['flutter'];
+  final generatesL10n = flutter is Map && flutter['generate'] == true;
+  final exempt = {
+    ...usedWithoutImport,
+    ...ignored,
+    if (generatesL10n) 'intl',
+  };
   final foreign = [for (final dir in otherPackages) '$dir/'];
 
   final imported = <String>{};
@@ -66,7 +74,11 @@ DependencyAudit auditDependencies(
   for (final entry in directivesByFile.entries) {
     final file = entry.key;
     if (foreign.any(file.startsWith)) continue;
-    final shipped = file.startsWith('lib/') || file.startsWith('bin/');
+    // What runs for the packages that depend on this one: its library, its
+    // executables, and its build hooks.
+    final shipped = file.startsWith('lib/') ||
+        file.startsWith('bin/') ||
+        file.startsWith('hook/');
 
     for (final uri in entry.value) {
       final package = _packageOf(uri);

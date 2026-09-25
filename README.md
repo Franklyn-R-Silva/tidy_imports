@@ -161,7 +161,7 @@ $ dart run tidy_imports --doctor
 ┃  ! `always_use_package_imports` (from analysis_options.yaml) is on.
 ┃    `package_imports` rewrites the relative imports under lib/ into the
 ┃    `package:` form it asks for.
-┃      → package_imports: true
+┃      → package_imports: true, relative_imports: false
 ┗━━ ✖ 1 fight, 1 suggestion
 ```
 
@@ -192,7 +192,7 @@ $ dart run tidy_imports --report --feature-depth=2
 ┃     lib/features/home/legacy_banner.dart
 ┃  ! 1 dependency in pubspec.yaml nothing imports:
 ┃     intl
-┃  ✖ 1 package imported under lib/ or bin/ but declared only in dev_dependencies:
+┃  ✖ 1 package imported under lib/, bin/ or hook/ but declared only in dev_dependencies:
 ┃     mocktail — lib/features/home/home_page.dart
 ┃  Most imported:
 ┃     4  lib/core/theme.dart

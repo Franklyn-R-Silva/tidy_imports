@@ -43,7 +43,7 @@ but was filed as relative.
   per-feature coupling — imports in and out, and instability — with the
   heaviest pairs. `feature_depth` / `--feature-depth` sets what a feature is
 * `--report` checks imports against `pubspec.yaml`: dependencies nothing
-  imports, and packages imported from `lib/` or `bin/` that are only dev
+  imports, and packages imported from `lib/`, `bin/` or `hook/` that are only dev
   dependencies. `ignored_dependencies` keeps a font, a generator or a plugin
   out of it
 
