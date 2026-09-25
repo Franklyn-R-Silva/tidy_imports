@@ -93,10 +93,43 @@ List<RegExp> compilePatterns(Iterable<String> patterns, String label) {
   return matchers;
 }
 
+/// Every entity under `<currentPath>/<name>`, walked without following links.
+///
+/// `listSync(recursive: true)` follows links by default, and a Flutter app
+/// under `packages/` carries links into the pub cache:
+/// `windows/flutter/ephemeral/.plugin_symlinks/` and `ios/.symlinks/plugins/`
+/// point at every plugin's own `lib/`. The sorter used to walk through them
+/// and rewrite plugin sources that belong to no project at all. A link is now
+/// never entered — and a link to a file is a [Link], not a [File], so it is
+/// never sorted either.
+///
+/// Hidden directories (`.dart_tool/`, `.symlinks/`) and a package's `build/`
+/// output are generated, so they are pruned too — `build/` only where it sits
+/// beside a `pubspec.yaml`, since `lib/src/build/` is ordinary source.
 List<FileSystemEntity> _readDir(String currentPath, String name) {
-  final dir = Directory('$currentPath/$name');
-  if (dir.existsSync()) {
-    return dir.listSync(recursive: true);
+  final root = Directory('$currentPath/$name');
+  if (!root.existsSync()) return [];
+
+  final found = <FileSystemEntity>[];
+  void walk(Directory directory) {
+    final children = directory.listSync(followLinks: false);
+    final isPackageRoot =
+        children.any((e) => e is File && _baseName(e.path) == 'pubspec.yaml');
+    for (final child in children) {
+      if (child is! Directory) {
+        found.add(child);
+        continue;
+      }
+      final base = _baseName(child.path);
+      if (base.startsWith('.') || (isPackageRoot && base == 'build')) continue;
+      found.add(child);
+      walk(child);
+    }
   }
-  return [];
+
+  walk(root);
+  return found;
 }
+
+/// The last segment of [path], on either separator.
+String _baseName(String path) => toPosix(path).split('/').last;

@@ -192,6 +192,49 @@ export 'package:demo/z.dart';
     );
   });
 
+  test('never walks into hidden directories or a package build/', () {
+    // A sub-package's `.dart_tool/` and `build/` hold generated Dart, and a
+    // Flutter app's `.plugin_symlinks/` lead into the pub cache. None of it is
+    // the project's to rewrite. `lib/src/build/` is ordinary source.
+    final hidden = File(
+      '${temp.path}/packages/app/.dart_tool/build/entrypoint/build.dart',
+    )
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+    final output = File('${temp.path}/packages/app/build/gen/x.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+    File('${temp.path}/packages/app/pubspec.yaml')
+        .writeAsStringSync('name: app\n');
+    final source = File('${temp.path}/lib/src/build/y.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(unsorted);
+
+    expect(run().exitCode, 0);
+
+    expect(hidden.readAsStringSync(), unsorted);
+    expect(output.readAsStringSync(), unsorted);
+    expect(source.readAsStringSync(), sorted);
+  });
+
+  test('never follows a link out of the project', () {
+    final outside = Directory.systemTemp.createTempSync('tidy_imports_link_');
+    addTearDown(() => outside.deleteSync(recursive: true));
+    final foreign = File('${outside.path}/plugin.dart')
+      ..writeAsStringSync(unsorted);
+
+    try {
+      Link('${temp.path}/lib/plugin').createSync(outside.path);
+    } on FileSystemException {
+      // Windows only lets an elevated or developer-mode shell make a link.
+      markTestSkipped('this platform does not allow creating a link here');
+      return;
+    }
+
+    expect(run().exitCode, 0);
+    expect(foreign.readAsStringSync(), unsorted);
+  });
+
   test('reports an invalid ignored_files pattern instead of crashing', () {
     File('${temp.path}/pubspec.yaml').writeAsStringSync('''
 name: demo
