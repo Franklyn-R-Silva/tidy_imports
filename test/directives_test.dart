@@ -1610,6 +1610,90 @@ void main() {}
 
       expect(result.duplicatesRemoved, 1);
     });
+
+    test('rewrites a uri written on the line after the keyword', () {
+      // The text used to keep the package: uri while the sort key became the
+      // relative one, so the import was filed among the relative imports.
+      final lines = [
+        "import 'package:http/http.dart';",
+        'import',
+        "    'package:demo/src/foo.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        "import 'package:http/http.dart';\n"
+        '\n'
+        'import\n'
+        "    'src/foo.dart';\n"
+        '\n'
+        'void main() {}\n',
+      );
+    });
+
+    test('rewrites every target of a conditional import', () {
+      final lines = [
+        "import 'package:demo/src/stub.dart'",
+        "    if (dart.library.io) 'package:demo/src/io.dart'",
+        "    if (dart.library.js_interop) 'package:demo/src/web.dart';",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith(
+          "import 'src/stub.dart'\n"
+          "    if (dart.library.io) 'src/io.dart'\n"
+          "    if (dart.library.js_interop) 'src/web.dart';\n",
+        ),
+      );
+    });
+
+    test('never rewrites a uri quoted in the trailing comment', () {
+      final lines = [
+        "import 'package:demo/src/foo.dart'; // was 'package:demo/old.dart'",
+        '',
+        'void main() {}',
+      ];
+
+      final result = sortImports(
+        lines,
+        'demo',
+        false,
+        false,
+        true,
+        relativeImports: true,
+        libRelativePath: 'a.dart',
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("import 'src/foo.dart'; // was 'package:demo/old.dart'"),
+      );
+    });
   });
 
   group('group_project_by_folder_depth', () {

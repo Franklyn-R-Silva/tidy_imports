@@ -183,26 +183,22 @@ ImportSortData sortImports(
   // when the option is off, when the file's own location is unknown, or when
   // the URI points anywhere else — another package's `package:` URI has no
   // relative form from here.
+  //
+  // Every URI of the directive is rewritten, wherever its line breaks. This
+  // used to replace the first URI on the first line only: an `import` whose
+  // URI sat on the next line kept its text but took the new URI as its sort
+  // key, so a `package:` import was filed among the relative ones; and a
+  // conditional import came out half-rewritten.
   _Directive relativize(_Directive directive) {
     final from = libRelativePath;
     if (!relativeImports || from == null) return directive;
 
-    const scheme = 'package:';
-    final prefix = '$scheme$packageName/';
-    if (!directive.uri.startsWith(prefix)) return directive;
-
-    final relative =
-        _relativePath(from, directive.uri.substring(prefix.length));
-    if (relative == null) return directive;
-
-    return _Directive(
-      directive.leading,
-      [
-        directive.lines.first.replaceFirst(directive.uri, relative),
-        ...directive.lines.skip(1),
-      ],
-      relative,
-      directive.order,
+    final prefix = 'package:$packageName/';
+    return _rewriteUris(
+      directive,
+      (uri) => uri.startsWith(prefix)
+          ? _relativePath(from, uri.substring(prefix.length))
+          : null,
     );
   }
 
@@ -671,6 +667,48 @@ String? _relativePath(String from, String to) {
     ...toParts.sublist(common),
   ];
   return parts.isEmpty ? null : parts.join('/');
+}
+
+/// [directive] with each of its URIs passed through [rewrite], which returns
+/// the replacement or null to keep the URI as written.
+///
+/// Every quoted URI in the directive's code is a candidate — the default one
+/// and each conditional target, on whichever line it sits — and nothing in a
+/// trailing comment is. The rest of each line is kept byte for byte, so a
+/// prefix, a `show` clause or a comment survives the rewrite.
+_Directive _rewriteUris(
+  _Directive directive,
+  String? Function(String uri) rewrite,
+) {
+  var changed = false;
+  final lines = [
+    for (final line in directive.lines)
+      () {
+        // The trailing comment is cut off the end, so every index into the
+        // code is an index into the line as well.
+        final code = _stripTrailingComment(line);
+        final out = StringBuffer();
+        var last = 0;
+        for (final match in _uriPattern.allMatches(code)) {
+          final replacement = rewrite(match.group(1)!);
+          if (replacement == null) continue;
+          changed = true;
+          out
+            ..write(line.substring(last, match.start + 1))
+            ..write(replacement);
+          last = match.end - 1;
+        }
+        return (out..write(line.substring(last))).toString();
+      }(),
+  ];
+  if (!changed) return directive;
+
+  return _Directive(
+    directive.leading,
+    lines,
+    rewrite(directive.uri) ?? directive.uri,
+    directive.order,
+  );
 }
 
 /// Sorts by URI, falling back to the original position so equal URIs keep
