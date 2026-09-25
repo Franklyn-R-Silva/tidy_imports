@@ -661,6 +661,18 @@ import 'dart:io';
       expect(config.packageImports, isFalse);
     });
 
+    test('feature_depth defaults to 1 and reads a larger value', () {
+      expect(TidyConfig.fromYaml(null).featureDepth, 1);
+      expect(TidyConfig.fromYaml(loadYaml('feature_depth: 2')).featureDepth, 2);
+    });
+
+    test('a feature_depth below 1 is reported and falls back to 1', () {
+      final config = TidyConfig.fromYaml(loadYaml('feature_depth: 0'));
+
+      expect(config.featureDepth, 1);
+      expect(config.issues.single, contains('feature_depth'));
+    });
+
     test('reads package_imports', () {
       final config = TidyConfig.fromYaml(loadYaml('package_imports: true'));
 
@@ -827,6 +839,7 @@ ignored_files:
   - \\.g\\.dart\$
 report_roots:
   - /lib/app/bootstrap.dart
+feature_depth: 2
 tiers:
   - name: "Company imports:"
     pattern: "package:acme_"

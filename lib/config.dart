@@ -24,6 +24,7 @@ const _knownKeys = {
   'test_import_prefixes',
   'ignored_files',
   'report_roots',
+  'feature_depth',
   'tiers',
   'sort_exports',
   'remove_duplicates',
@@ -128,6 +129,11 @@ class TidyConfig {
   /// subfolder — is declared here rather than reported forever.
   final List<String> reportRoots;
 
+  /// How many folders under `lib/` make a feature in `--report`'s coupling
+  /// metrics — `lib/src/` looked through. 1 splits `lib/auth` from
+  /// `lib/core`; the common `lib/features/<name>/` layout wants 2.
+  final int featureDepth;
+
   /// Whether `export` directives are sorted into their own block. Opt-in: on
   /// by default it would rewrite the barrel file of every existing project.
   final bool sortExports;
@@ -198,6 +204,7 @@ class TidyConfig {
     this.relativeImports = false,
     this.packageImports = false,
     this.reportRoots = const [],
+    this.featureDepth = 1,
     this.attachComments = false,
     this.issues = const [],
   });
@@ -344,6 +351,7 @@ class TidyConfig {
       packageImports: packageImports,
       attachComments: _readBool(config, 'attach_comments', issues) ?? false,
       reportRoots: _readStrings(config, 'report_roots', issues),
+      featureDepth: _readFeatureDepth(config, issues),
       groupProjectByFolderDepth:
           _readInt(config, 'group_project_by_folder_depth', issues) ?? 0,
       issues: issues,
@@ -399,6 +407,18 @@ int? _readInt(
   final List<String> issues,
 ) =>
     _readTyped<int>(config, key, 'a whole number', issues);
+
+/// Reads `feature_depth`, which counts folders and so has to be at least 1.
+int _readFeatureDepth(final YamlMap config, final List<String> issues) {
+  final depth = _readInt(config, 'feature_depth', issues);
+  if (depth == null) return 1;
+  if (depth >= 1) return depth;
+  issues.add(
+    'option `feature_depth` counts folders under lib/, so it has to be 1 or '
+    'more, but it is $depth. Using 1.',
+  );
+  return 1;
+}
 
 /// Reads [key] as a list of strings, reporting both a value that is not a list
 /// and an entry inside it that is not text. A bad entry costs its own line,

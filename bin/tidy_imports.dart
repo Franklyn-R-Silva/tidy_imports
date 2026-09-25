@@ -1,6 +1,7 @@
 // Dart imports:
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 // Package imports:
 import 'package:args/args.dart';
@@ -14,6 +15,7 @@ import 'package:tidy_imports/config_edit.dart';
 import 'package:tidy_imports/doctor.dart';
 import 'package:tidy_imports/files.dart' as files;
 import 'package:tidy_imports/graph.dart';
+import 'package:tidy_imports/graph_export.dart';
 import 'package:tidy_imports/pubspec_sort.dart' as pubspec_sort;
 import 'package:tidy_imports/sort.dart' as sort;
 
@@ -48,6 +50,13 @@ void main(List<String> args) {
     ..addFlag('exit-if-changed', negatable: false)
     ..addFlag('dry-run', negatable: false)
     ..addFlag('report', negatable: false)
+    ..addOption(
+      'format',
+      allowed: const ['text', 'mermaid', 'dot', 'json'],
+      defaultsTo: 'text',
+      valueHelp: 'text|mermaid|dot|json',
+    )
+    ..addOption('feature-depth', valueHelp: 'n')
     ..addFlag('doctor', negatable: false)
     ..addFlag('apply', negatable: false);
 
@@ -84,6 +93,15 @@ void main(List<String> args) {
       'Error: --doctor and --report are separate run modes. Pass one of them.',
     );
     exit(1);
+  }
+  for (final option in const ['format', 'feature-depth']) {
+    if (argResults.wasParsed(option) && argResults['report'] != true) {
+      stderr.writeln(
+        'Error: --$option shapes what --report prints, so it only works with '
+        '--report.',
+      );
+      exit(1);
+    }
   }
 
   final currentPath = Directory.current.path;
@@ -302,6 +320,22 @@ void main(List<String> args) {
   // own: the file set above is what the *sorter* touches, and using it as the
   // graph's node set deleted every edge leaving a filtered-out file.
   if (argResults['report'] == true) {
+    // Features are counted in folders, so anything but a whole number from 1
+    // up is a user error, said the way a bad --group-by-folder-depth is.
+    var featureDepth = config.featureDepth;
+    final featureDepthArg = argResults['feature-depth'] as String?;
+    if (featureDepthArg != null) {
+      final parsed = int.tryParse(featureDepthArg);
+      if (parsed == null || parsed < 1) {
+        stderr.writeln(
+          'Error: --feature-depth expects a whole number of folders, 1 or '
+          'more, got "$featureDepthArg".',
+        );
+        exit(1);
+      }
+      featureDepth = parsed;
+    }
+
     exit(_report(
       currentPath,
       packageName,
@@ -310,6 +344,8 @@ void main(List<String> args) {
       ignoreMatchers: ignoreMatchers,
       reportRoots: config.reportRoots,
       failOnFindings: exitOnChange,
+      format: argResults['format'] as String,
+      featureDepth: featureDepth,
     ));
   }
 
@@ -540,7 +576,10 @@ int _report(
   required List<RegExp> ignoreMatchers,
   required List<String> reportRoots,
   required bool failOnFindings,
+  required String format,
+  required int featureDepth,
 }) {
+  final text = format == 'text';
   final scanned = files.dartFiles(
     currentPath,
     const [],
@@ -549,9 +588,15 @@ int _report(
 
   if (scanned.isEmpty) {
     final dirs = [...files.standardDirectories, ...files.reportDirectories];
-    stdout.writeln('┏━━ Reading the import graph');
-    stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under ${dirs.join(', ')} '
-        '— nothing to report');
+    if (text) {
+      stdout.writeln('┏━━ Reading the import graph');
+      stdout.writeln('┗━━ ${'!'.yellow()} No Dart files under '
+          '${dirs.join(', ')} — nothing to report');
+    } else {
+      // The artifact is the whole of stdout, so the sentence goes elsewhere.
+      stderr.writeln('No Dart files under ${dirs.join(', ')} — nothing to '
+          'report.');
+    }
     if (failOnFindings) {
       stderr.writeln('🚨 --exit-if-changed with nothing to check. '
           'Run from the project root.');
@@ -644,10 +689,78 @@ int _report(
           scopeMatchers.any((m) => m.hasMatch(absolutes[path]!))) &&
       !ignoreMatchers.any((m) => m.hasMatch('/$path'));
 
+  final scope = directives.keys.where(inScope).toList();
   final groups = graph.cycles().where((g) => g.any(inScope)).toList();
   final dead = graph.unreachable(roots: roots).where(inScope).toList();
+  final findings = groups.length + dead.length;
 
-  stdout.writeln('┏━━ Reading the import graph of ${directives.length} files');
+  // A drawing is of the library — what the architecture is made of. Tests,
+  // tools and examples still count as importers above; drawn, they would bury
+  // it.
+  final drawn = scope.where(graph.isLibraryFile);
+  switch (format) {
+    case 'json':
+      stdout.writeln(const JsonEncoder.withIndent('  ').convert(reportJson(
+        graph,
+        packageName: packageName,
+        files: scope,
+        cycles: groups,
+        unreachable: dead,
+        featureDepth: featureDepth,
+      )));
+    case 'dot':
+      stdout.write(toDot(
+        graph,
+        nodes: drawn,
+        unreachable: dead.toSet(),
+        featureDepth: featureDepth,
+      ));
+    case 'mermaid':
+      final edges = drawnEdges(graph, drawn);
+      if (edges > mermaidEdgeLimit) {
+        stderr.writeln('Warning: $edges edges is past the $mermaidEdgeLimit '
+            'Mermaid draws by default — GitHub shows an error box instead of '
+            'the diagram. Narrow it with a pattern (e.g. "lib/features/auth/"), '
+            'or use --format=dot.');
+      }
+      stdout.write(toMermaid(
+        graph,
+        nodes: drawn,
+        unreachable: dead.toSet(),
+        featureDepth: featureDepth,
+      ));
+    default:
+      _printReport(
+        graph,
+        files: directives.length,
+        groups: groups,
+        dead: dead,
+        scope: scope,
+        featureDepth: featureDepth,
+        findings: findings,
+      );
+  }
+
+  if (failOnFindings && findings > 0) {
+    stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
+        'in the import graph. Failing because --exit-if-changed was passed.');
+    return 1;
+  }
+  return 0;
+}
+
+/// The text form of `--report`: findings first, then what the graph says
+/// about the shape of the code.
+void _printReport(
+  ImportGraph graph, {
+  required int files,
+  required List<List<String>> groups,
+  required List<String> dead,
+  required List<String> scope,
+  required int featureDepth,
+  required int findings,
+}) {
+  stdout.writeln('┏━━ Reading the import graph of $files files');
 
   if (groups.isEmpty) {
     stdout.writeln('┃  ${'✔'.green()} No import cycles');
@@ -676,16 +789,79 @@ int _report(
         'invisible here — read before deleting)');
   }
 
-  final findings = groups.length + dead.length;
+  _printMetrics(graph, scope: scope, depth: featureDepth);
+
   stdout.writeln('┗━━ ${findings == 0 ? '✔'.green() : '•'} '
       '$findings ${findings == 1 ? 'finding' : 'findings'}');
+}
 
-  if (failOnFindings && findings > 0) {
-    stderr.writeln('\n🚨 $findings ${findings == 1 ? 'finding' : 'findings'} '
-        'in the import graph. Failing because --exit-if-changed was passed.');
-    return 1;
+/// The ranked lists and the feature coupling. Informational: none of it is a
+/// finding, so none of it fails `--exit-if-changed`.
+void _printMetrics(
+  ImportGraph graph, {
+  required List<String> scope,
+  required int depth,
+}) {
+  const top = 5;
+  final inScope = scope.toSet();
+
+  void ranked(String title, Map<String, int> counts) {
+    final entries = counts.entries
+        .where((e) => e.value > 0 && inScope.contains(e.key))
+        .toList()
+      ..sort((a, b) {
+        final byCount = b.value.compareTo(a.value);
+        return byCount != 0 ? byCount : a.key.compareTo(b.key);
+      });
+    if (entries.isEmpty) return;
+    final shown = entries.take(top).toList();
+    final width = '${shown.first.value}'.length;
+    stdout.writeln('┃  $title');
+    for (final entry in shown) {
+      stdout.writeln('┃     ${'${entry.value}'.padLeft(width)}  ${entry.key}');
+    }
   }
-  return 0;
+
+  ranked('Most imported:', graph.fanIn());
+  ranked('Imports the most:', graph.fanOut());
+
+  final features = graph.features(depth);
+  if (features.length > 1) {
+    final width = features.map((f) => f.name.length).reduce(max);
+    stdout.writeln('┃  Features at feature_depth $depth — files, imports in '
+        'and out, instability:');
+    for (final feature in features) {
+      final instability = feature.instability?.toStringAsFixed(2) ?? '—';
+      stdout.writeln('┃     ${feature.name.padRight(width)}  '
+          '${'${feature.files}'.padLeft(4)} files  '
+          'in ${'${feature.afferent}'.padLeft(3)}  '
+          'out ${'${feature.efferent}'.padLeft(3)}  I $instability');
+    }
+
+    final pairs = graph.coupling(depth).take(top).toList();
+    if (pairs.isNotEmpty) {
+      stdout.writeln('┃  Strongest coupling:');
+      for (final pair in pairs) {
+        stdout.writeln('┃     ${pair.from} → ${pair.to}  '
+            '(${pair.edges} ${pair.edges == 1 ? 'import' : 'imports'})');
+      }
+    }
+  }
+
+  // One folder holding most of lib/ means the depth is one short of the
+  // layout: `lib/features/<name>/` is a single feature called `features` at 1.
+  final total = features.fold<int>(0, (sum, f) => sum + f.files);
+  if (total >= 10 && features.isNotEmpty) {
+    final biggest = features.reduce((a, b) => b.files > a.files ? b : a);
+    final splits = graph.edges.keys.any((file) =>
+        graph.featureOf(file, depth) == biggest.name &&
+        graph.featureOf(file, depth + 1) != biggest.name);
+    if (biggest.files / total > 0.6 && splits) {
+      stdout.writeln('┃  • ${(100 * biggest.files / total).round()}% of the '
+          'library sits in ${biggest.name} — feature_depth: ${depth + 1} '
+          'splits it');
+    }
+  }
 }
 
 /// Every sub-package under `packages/`, as directory -> name, read from each

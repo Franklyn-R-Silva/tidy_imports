@@ -92,10 +92,19 @@ Run modes
                                  into tidy_imports.yaml or the pubspec block.
       --report                   Read the project's own import graph and say
                                  what it found: files that import each other,
-                                 and files under lib/ no entry point reaches.
-                                 Sorts nothing, writes nothing. Patterns and
-                                 ignored_files narrow what is printed, never
-                                 what is read.
+                                 files under lib/ no entry point reaches, the
+                                 most imported files and how the features
+                                 couple. Sorts nothing, writes nothing.
+                                 Patterns and ignored_files narrow what is
+                                 printed, never what is read.
+      --format=<text|mermaid|dot|json>
+                                 With --report: print a Mermaid diagram (GitHub
+                                 draws it in a README or a pull request),
+                                 Graphviz DOT, or JSON instead of text. Only
+                                 the artifact goes to stdout.
+      --feature-depth=<n>        With --report: how many folders under lib/
+                                 make a feature (lib/src/ is looked through).
+                                 Default 1; lib/features/<name>/ wants 2.
       --dry-run                  Report what would change; write nothing.
       --exit-if-changed          Exit 1 if anything is unsorted — or, with
                                  --report, on any finding; with --doctor, on
@@ -123,7 +132,8 @@ Examples
   dart run tidy_imports lib/main.dart
   dart run tidy_imports "lib/features/"
   dart run tidy_imports --sort-exports --group-by-folder-depth=1
-  dart run tidy_imports --report          # cycles and dead files
+  dart run tidy_imports --report          # cycles, dead files, coupling
+  dart run tidy_imports --report --format=mermaid > imports.mmd
   dart run tidy_imports --doctor          # which options your lints want
   dart run tidy_imports --doctor --apply  # ...and write them to the config
   dart run tidy_imports --flat            # satisfy directives_ordering

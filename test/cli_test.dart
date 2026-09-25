@@ -775,8 +775,9 @@ tidy_imports:
       final text = out(['--report', 'lib/features/']);
 
       expect(text, contains('1 group of files that import each other'));
-      expect(text, isNot(contains('lib/features/y.dart')),
-          reason: 'main.dart is outside the pattern but still in the graph');
+      expect(text, contains('Every file under lib/ is reachable'),
+          reason: 'main.dart is outside the pattern but still in the graph, '
+              'so y.dart is not dead');
     });
 
     test('an importer under example/ keeps a lib/ file alive', () {
@@ -881,6 +882,98 @@ tidy_imports:
       libFile('a.dart').writeAsStringSync('class A {}\n');
 
       expect(run(['--report', '--exit-if-changed']).exitCode, 0);
+    });
+
+    test('names the most imported files and the features', () {
+      at('lib/core/theme.dart').writeAsStringSync('class Theme {}\n');
+      at('lib/auth/login.dart')
+          .writeAsStringSync("import '../core/theme.dart';\n");
+      libFile('main.dart').writeAsStringSync(
+        "import 'auth/login.dart';\nimport 'core/theme.dart';\n"
+        'void main() {}\n',
+      );
+
+      final text = out(['--report']);
+
+      expect(text, contains('Most imported:'));
+      expect(text, contains('2  lib/core/theme.dart'));
+      expect(text, contains('Strongest coupling:'));
+      expect(text, contains('lib/auth → lib/core  (1 import)'));
+    });
+
+    test('--format=mermaid prints only the diagram', () {
+      writeProject();
+
+      final result = run(['--report', '--format=mermaid']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, startsWith('flowchart LR\n'));
+      expect(result.stdout, isNot(contains('┏━━')));
+      expect(result.stdout, contains('linkStyle'), reason: 'the a-b-c cycle');
+      expect(result.stdout, contains('class '), reason: 'dead.dart is dashed');
+    });
+
+    test('--format=dot prints a digraph', () {
+      writeProject();
+
+      final dot = out(['--report', '--format=dot']);
+
+      expect(dot, startsWith('digraph imports {'));
+      expect(dot, contains('"lib/a.dart" -> "lib/c.dart"'));
+    });
+
+    test('--format=json is a document, and keeps the exit code', () {
+      writeProject();
+
+      final result = run(['--report', '--format=json', '--exit-if-changed']);
+
+      expect(result.exitCode, 1, reason: 'the cycle and the dead file');
+      final report = jsonDecode(result.stdout as String) as Map;
+      expect(report['schemaVersion'], 1);
+      expect(report['unreachable'], contains('lib/dead.dart'));
+      expect(report['cycles'] as List, hasLength(1));
+    });
+
+    test('--feature-depth splits features one folder deeper', () {
+      at('lib/features/auth/login.dart')
+          .writeAsStringSync("import '../home/home.dart';\n");
+      at('lib/features/home/home.dart').writeAsStringSync('class Home {}\n');
+
+      final report = jsonDecode(
+        out(['--report', '--format=json', '--feature-depth=2']),
+      ) as Map;
+
+      expect(
+        (report['metrics'] as Map)['coupling'],
+        [
+          {
+            'from': 'lib/features/auth',
+            'to': 'lib/features/home',
+            'edges': 1,
+          },
+        ],
+      );
+    });
+
+    test('an unknown --format is an error line', () {
+      final result = run(['--report', '--format=svg']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('svg'));
+    });
+
+    test('--format without --report is an error', () {
+      final result = run(['--format=json']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--report'));
+    });
+
+    test('a --feature-depth below 1 is an error', () {
+      final result = run(['--report', '--feature-depth=0']);
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('--feature-depth'));
     });
   });
 

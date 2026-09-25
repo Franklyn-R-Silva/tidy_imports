@@ -30,7 +30,15 @@ export 'doctor.dart'
         importLints,
         readLints;
 export 'src/version.dart' show packageVersion, packageName;
-export 'graph.dart' show ImportGraph, resolveUri;
+export 'graph.dart' show Coupling, FeatureMetrics, ImportGraph, resolveUri;
+export 'graph_export.dart'
+    show
+        drawnEdges,
+        mermaidEdgeLimit,
+        reportJson,
+        reportSchemaVersion,
+        toDot,
+        toMermaid;
 export 'sort.dart'
     show declaresMain, directiveUris, sortImports, ImportSortData;
 export 'files.dart'
