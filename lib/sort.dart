@@ -147,10 +147,15 @@ ImportSortData sortImports(
   // the comment was orphaned under the duplicate. The next run read that as
   // already sorted, so the file never healed — switching the option off once
   // corrupted the block permanently.
+  //
+  // An annotation travels with the directive below it (see the loop), so a
+  // header above `@Deprecated(…) import …` is ours as well.
   bool directiveFollows(int index) {
     var i = index;
     while (i < lines.length &&
-        (_isIgnorePragma(lines[i]) || _isAttachedComment(lines[i]))) {
+        (_isIgnorePragma(lines[i]) ||
+            _isAttachedComment(lines[i]) ||
+            lines[i].startsWith('@'))) {
       i++;
     }
     return i < lines.length && startsDirective(lines[i]);
@@ -233,6 +238,9 @@ ImportSortData sortImports(
   var duplicatesRemoved = 0;
 
   final scanner = _SourceScanner();
+  // Whether a header of ours has been stripped: the block has begun even
+  // though no directive has been read yet.
+  var headerStripped = false;
   var order = 0;
   var index = 0;
 
@@ -245,6 +253,7 @@ ImportSortData sortImports(
     if (scanner.startsInCode) {
       // A header we wrote on an earlier run: drop it, the emitter re-adds it.
       if (strippable.contains(line) && directiveFollows(index + 1)) {
+        headerStripped = true;
         scanner.consume(line);
         index++;
         continue;
@@ -260,11 +269,24 @@ ImportSortData sortImports(
       // and belongs at the top, where it was.
       // A comment above the *first* directive is the file's own header — a
       // licence, a `// Dart imports:` of ours — so it is never attached.
-      final attaching = attachComments && !noDirectives();
+      //
+      // Once our own header has been stripped the block has begun, though.
+      // Reading only "no directive yet" took the note a previous run wrote
+      // under `// Dart imports:` for the file's header, moved it to the top,
+      // and the file changed again on every second run.
+      //
+      // An annotation (`@Deprecated(…)`) belongs to the directive below it the
+      // same way, and has to move with it: left behind, it annotated whatever
+      // came after the block — `main()`, or nothing at all, which does not
+      // compile. Above the first directive it stays where it is: `test` reads
+      // a `@TestOn` there as the library's own.
+      final inBlock = headerStripped || !noDirectives();
+      final attaching = attachComments && inBlock;
       var start = index;
       while (start < lines.length &&
           (_isIgnorePragma(lines[start]) ||
-              (attaching && _isAttachedComment(lines[start])))) {
+              (attaching && _isAttachedComment(lines[start])) ||
+              (inBlock && lines[start].startsWith('@')))) {
         start++;
       }
 
@@ -455,7 +477,9 @@ ImportSortData sortImports(
   final trailing = <String>[];
   var addedCode = false;
   for (final line in afterLines) {
-    if (line != '') {
+    // A line of spaces is as blank as an empty one: counting it as code left
+    // a barrel ending on blank lines, the issue #6 shape.
+    if (line.trim().isNotEmpty) {
       trailing.add(line);
       addedCode = true;
     } else if (addedCode) {
@@ -539,8 +563,10 @@ bool declaresMain(List<String> lines) {
   return false;
 }
 
+// `Future` and `FutureOr` may come without a type argument: `Future main()`
+// declares an entry point as surely as `Future<void> main()` does.
 final _mainDeclaration = RegExp(
-  r'^(?:(?:Future<[^>]*>|FutureOr<[^>]*>|void|dynamic)\s+)?main\s*\(',
+  r'^(?:(?:Future(?:<[^>]*>)?|FutureOr(?:<[^>]*>)?|void|dynamic)\s+)?main\s*\(',
 );
 
 /// Matches the quoted URI of a directive — in group 1 when single-quoted, in

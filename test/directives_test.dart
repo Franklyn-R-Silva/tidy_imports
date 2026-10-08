@@ -2165,4 +2165,109 @@ void main() {}
       expect(result.updated, isFalse);
     });
   });
+
+  group('settles in one run', () {
+    ImportSortData twice(
+      List<String> lines, {
+      bool attachComments = false,
+      bool sortExports = false,
+    }) {
+      final first = sortImports(lines, 'demo', false, false, false,
+          attachComments: attachComments, sortExports: sortExports);
+      // Split the way the CLI does: no empty element after the final newline.
+      final second = sortImports(const LineSplitter().convert(first.sortedFile),
+          'demo', false, false, false,
+          attachComments: attachComments, sortExports: sortExports);
+      expect(second.updated, isFalse,
+          reason: 'a second run has to find nothing to do');
+      expect(second.sortedFile, first.sortedFile);
+      return first;
+    }
+
+    test('a note on the import that sorts first stays attached', () {
+      final result = twice(
+        [
+          "import 'package:http/http.dart';",
+          '// why io',
+          "import 'dart:io';",
+          '',
+          'void main() {}',
+        ],
+        attachComments: true,
+      );
+
+      expect(
+        result.sortedFile,
+        startsWith("// Dart imports:\n// why io\nimport 'dart:io';\n"),
+        reason: 'the next run took the note under our header for the '
+            "file's own header and moved it to the top",
+      );
+    });
+
+    test('an annotation moves with the import it annotates', () {
+      final result = twice([
+        "import 'b.dart';",
+        "@Deprecated('use b')",
+        "import 'a.dart';",
+        '',
+        'void main() {}',
+      ]);
+
+      expect(
+        result.sortedFile,
+        '''
+// Project imports:
+@Deprecated('use b')
+import 'a.dart';
+import 'b.dart';
+
+void main() {}
+''',
+        reason: 'left behind, it deprecated main()',
+      );
+    });
+
+    test('an annotated export does not leave its annotation dangling', () {
+      final result = twice(
+        [
+          "export 'b.dart';",
+          "@Deprecated('use b')",
+          "export 'a.dart';",
+        ],
+        sortExports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        "// Project exports:\n@Deprecated('use b')\nexport 'a.dart';\n"
+        "export 'b.dart';\n",
+        reason: 'an annotation with nothing below it does not compile',
+      );
+    });
+
+    test('an annotation above the first directive stays on top', () {
+      final result = twice([
+        "@TestOn('vm')",
+        "import 'package:test/test.dart';",
+        "import 'dart:io';",
+        '',
+        'void main() {}',
+      ]);
+
+      expect(result.sortedFile, startsWith("@TestOn('vm')\n"));
+    });
+
+    test('a line of spaces below a barrel is not code', () {
+      final result = twice(
+        ["export 'b.dart';", "export 'a.dart';", '  '],
+        sortExports: true,
+      );
+
+      expect(
+        result.sortedFile,
+        "// Project exports:\nexport 'a.dart';\nexport 'b.dart';\n",
+        reason: 'it left the barrel ending on blank lines (issue #6)',
+      );
+    });
+  });
 }

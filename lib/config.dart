@@ -360,8 +360,7 @@ class TidyConfig {
       reportRoots: _readStrings(config, 'report_roots', issues),
       ignoredDependencies: _readStrings(config, 'ignored_dependencies', issues),
       featureDepth: _readFeatureDepth(config, issues),
-      groupProjectByFolderDepth:
-          _readInt(config, 'group_project_by_folder_depth', issues) ?? 0,
+      groupProjectByFolderDepth: _readFolderDepth(config, issues),
       issues: issues,
     );
   }
@@ -426,6 +425,20 @@ int _readFeatureDepth(final YamlMap config, final List<String> issues) {
     'more, but it is $depth. Using 1.',
   );
   return 1;
+}
+
+/// Reads `group_project_by_folder_depth`, which `--group-by-folder-depth`
+/// refuses below 0. The config used to take a negative value without a word,
+/// even under `--strict-config`.
+int _readFolderDepth(final YamlMap config, final List<String> issues) {
+  final depth = _readInt(config, 'group_project_by_folder_depth', issues);
+  if (depth == null) return 0;
+  if (depth >= 0) return depth;
+  issues.add(
+    'option `group_project_by_folder_depth` counts folders, so it has to be 0 '
+    'or more, but it is $depth. Using 0.',
+  );
+  return 0;
 }
 
 /// Reads [key] as a list of strings, reporting both a value that is not a list

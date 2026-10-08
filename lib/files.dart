@@ -51,8 +51,10 @@ Map<String, File> dartFiles(
   // This used to activate only when some argument ended in the literal text
   // `dart`, so `tidy_imports "lib/src/*"` — an example from the tool's own
   // help — silently sorted the whole project instead of that folder. Any
-  // positional argument is a filter now.
-  final patterns = args.where((arg) => !arg.startsWith('-')).toList();
+  // positional argument is a filter now — including one that starts with `-`,
+  // which only reaches here after `--`: dropping it sorted every file while
+  // `--report` applied the same pattern, or threw on it.
+  final patterns = args;
   if (patterns.isEmpty) return dartFiles;
 
   final matchers = compilePatterns(patterns, 'file pattern');

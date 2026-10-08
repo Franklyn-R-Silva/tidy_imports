@@ -51,6 +51,29 @@ void main() {
         isNull,
       );
     });
+
+    test('of two sub-packages with one name, takes the importing one', () {
+      const packages = {
+        'packages/a/example': 'example',
+        'packages/b/example': 'example',
+      };
+
+      expect(
+        resolveUri('package:example/src/helper.dart',
+            from: 'packages/b/example/lib/main.dart',
+            packageName: 'mono',
+            packages: packages),
+        'packages/b/example/lib/src/helper.dart',
+        reason: 'the first match drew an edge into packages/a that no file '
+            'declares, and called b\'s own helper dead',
+      );
+      expect(
+        resolveUri('package:example/src/helper.dart',
+            from: 'lib/app.dart', packageName: 'mono', packages: packages),
+        'packages/a/example/lib/src/helper.dart',
+        reason: 'from outside both, the first one still answers',
+      );
+    });
   });
 
   group('resolveUri edge cases', () {
@@ -206,6 +229,10 @@ void main() {
       expect(declaresMain(['Future<void> main() async {}']), isTrue);
       expect(declaresMain(['main(List<String> args) {}']), isTrue);
       expect(declaresMain(['dynamic main() {}']), isTrue);
+      expect(declaresMain(['Future main() async {}']), isTrue,
+          reason: 'a raw Future is an entry point too; missing it called the '
+              'file, and everything only it imports, dead');
+      expect(declaresMain(['FutureOr main() {}']), isTrue);
     });
 
     test('ignores a main in a comment, a string, or a class', () {

@@ -36,6 +36,16 @@ void main() {
 
   File libFile(String name) => File('${temp.path}/lib/$name');
 
+  void setReadOnly(File file, bool readOnly) {
+    final result = Platform.isWindows
+        ? Process.runSync('attrib', [
+            readOnly ? '+R' : '-R',
+            file.absolute.path.replaceAll('/', r'\'),
+          ])
+        : Process.runSync('chmod', [readOnly ? '444' : '644', file.path]);
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+  }
+
   const unsorted = "import 'package:demo/z.dart';\n"
       "import 'dart:io';\n"
       '\n'
@@ -1108,6 +1118,7 @@ dependencies:
       final report = jsonDecode(result.stdout as String) as Map;
       expect(report['schemaVersion'], 1);
       expect(report['files'], isEmpty);
+      expect(report['dependencies'], {'unused': [], 'devOnly': []});
       expect(result.stderr, contains('nothing to report'));
     });
 
@@ -1199,6 +1210,124 @@ dependencies:
     expect(result.exitCode, 1);
     expect(result.stderr, contains('invalid file pattern'));
     expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+  });
+
+  test('a pattern after -- that starts with a dash still filters', () {
+    final file = libFile('main.dart')..writeAsStringSync(unsorted);
+
+    final result = run(['--', '-matches-nothing']);
+
+    expect(result.exitCode, 0);
+    expect(
+      file.readAsStringSync(),
+      unsorted,
+      reason: 'it was dropped, so the run sorted every file instead',
+    );
+  });
+
+  test('--report with a bad pattern after -- is an error line', () {
+    libFile('main.dart').writeAsStringSync(unsorted);
+
+    final result = run(['--report', '--', '-[']);
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('invalid file pattern'));
+    expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+  });
+
+  test('a file that cannot be written is one error line, and the run goes on',
+      () {
+    final locked = libFile('a.dart')..writeAsStringSync(unsorted);
+    final open = libFile('b.dart')..writeAsStringSync(unsorted);
+    setReadOnly(locked, true);
+    addTearDown(() => setReadOnly(locked, false));
+
+    final result = run();
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('could not write /lib/a.dart'));
+    expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+    expect(open.readAsStringSync(), sorted,
+        reason: 'the file after it is still sorted');
+  });
+
+  test('a byte order mark survives the rewrite', () {
+    const bom = [0xEF, 0xBB, 0xBF];
+    final file = libFile('main.dart')
+      ..writeAsBytesSync([...bom, ...utf8.encode(unsorted)]);
+
+    expect(run().exitCode, 0);
+    expect(file.readAsBytesSync(), [...bom, ...utf8.encode(sorted)]);
+  });
+
+  test('--exit-if-changed counts the files it checked', () {
+    libFile('main.dart').writeAsStringSync(sorted);
+
+    final result = run(['--exit-if-changed']);
+
+    expect(result.exitCode, 0);
+    expect(
+      result.stdout,
+      contains('Checked 1 files, 0 need sorting'),
+      reason: 'a clean run used to say "Checked 0 files"',
+    );
+  });
+
+  group('--sort-pubspec', () {
+    File pubspec() => File('${temp.path}/pubspec.yaml');
+
+    test('keeps a git dependency whole across a blank line', () {
+      pubspec().writeAsStringSync('''
+name: demo
+dependencies:
+  zeta:
+    git:
+      url: https://example.com/zeta.git
+
+      ref: main
+  alpha: ^1.0.0
+''');
+
+      expect(run(['--sort-pubspec']).exitCode, 0);
+      final second = run(['--sort-pubspec', '--exit-if-changed']);
+      expect(second.exitCode, 0,
+          reason: 'the pubspec it wrote has to parse, and read as sorted');
+      expect(
+          pubspec().readAsStringSync(),
+          startsWith('name: demo\n'
+              'dependencies:\n  alpha: ^1.0.0\n  zeta:\n'));
+    });
+
+    test('a sorted pubspec without a final newline passes', () {
+      pubspec().writeAsStringSync(
+          'name: demo\ndependencies:\n  a: ^1.0.0\n  b: ^1.0.0');
+
+      final result = run(['--sort-pubspec', '--exit-if-changed']);
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, isNot(contains('pubspec.yaml')));
+    });
+  });
+
+  test('--remove-unused --exit-if-changed fails on an unused import', () {
+    File('${temp.path}/pubspec.yaml').writeAsStringSync(
+        'name: demo\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n');
+    final got = Process.runSync(
+      Platform.resolvedExecutable,
+      ['pub', 'get', '--offline'],
+      workingDirectory: temp.path,
+    );
+    expect(got.exitCode, 0, reason: '${got.stderr}');
+    const unused = "// Dart imports:\nimport 'dart:async';\n\nvoid main() {}\n";
+    final file = libFile('main.dart')..writeAsStringSync(unused);
+
+    final result = run(['--remove-unused', '--exit-if-changed']);
+
+    expect(result.exitCode, 1,
+        reason: '`dart fix --dry-run` exits 0 either way, so the gate passed '
+            'on a file the next real run would change');
+    expect(result.stderr, contains('Unused imports found'));
+    expect(file.readAsStringSync(), unused);
   });
 
   group('config diagnostics', () {

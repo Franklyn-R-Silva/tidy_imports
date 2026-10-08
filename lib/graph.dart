@@ -410,12 +410,17 @@ String? resolveUri(
     if (name == packageName) {
       base = ['lib'];
     } else {
+      // Two sub-packages may share a name — two `example` apps, say. The one
+      // the importing file lives in is the one it means; taking the first
+      // match drew an edge into the other package that no file declares.
       String? dir;
       for (final entry in packages.entries) {
-        if (entry.value == name && entry.key.isNotEmpty) {
+        if (entry.value != name || entry.key.isEmpty) continue;
+        if (from.startsWith('${entry.key}/')) {
           dir = entry.key;
           break;
         }
+        dir ??= entry.key;
       }
       if (dir == null) return null;
       base = [...dir.split('/'), 'lib'];

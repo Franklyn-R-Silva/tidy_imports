@@ -107,6 +107,9 @@ LintState readLints(
     } else if (rules is YamlMap) {
       for (final entry in rules.entries) {
         final rule = '${entry.key}';
+        // `directives_ordering:` with no value switches nothing on — the
+        // analyzer reads it as off, and an include's `true` still stands.
+        if (entry.value == null) continue;
         if (entry.value == false) {
           enabled.remove(rule);
         } else {
@@ -170,7 +173,15 @@ String _normalize(String path) {
     }
     out.add(segment);
   }
-  return '${posix.startsWith('/') ? '/' : ''}${out.join('/')}';
+  // A UNC path (`\\server\share`, `\\wsl$`) keeps both of its slashes: folding
+  // them into one sent the read to `/server/share`, which never exists, and
+  // the doctor gave a false all-clear for want of a file it could not find.
+  final lead = posix.startsWith('//')
+      ? '//'
+      : posix.startsWith('/')
+          ? '/'
+          : '';
+  return '$lead${out.join('/')}';
 }
 
 /// How much a [DoctorFinding] matters.
@@ -311,12 +322,33 @@ List<DoctorFinding> diagnose(
     }
   }
 
-  // Under `flat` the section breaks are written anyway, and without blank
-  // lines there is nothing for the formatter to disagree with.
+  // `dart format` 3.13+ writes a blank line wherever the `dart:` / `package:`
+  // / relative section changes, in every mode — so leaving blank lines out
+  // is not a way to stay out of its way, it is the fight itself. This used to
+  // be read the other way round ("without blank lines there is nothing for
+  // the formatter to disagree with"), and `--doctor` passed a project that
+  // the formatter and the sorter rewrote on every run.
+  if (formatterSeparates && config.noBlankLines) {
+    findings.add(const DoctorFinding(
+      FindingKind.fight,
+      '`blank_lines` is off, and `dart format` 3.13+ puts a blank line '
+      'between the `dart:`, `package:` and relative imports by itself — the '
+      'two tools undo each other on every run.',
+      {'blank_lines': true},
+    ));
+  }
+
+  // Under `flat` the section breaks are written anyway. Folder grouping
+  // breaks between the `package:` and the relative half of the project group
+  // already, since their folders can never match — unless test doubles get a
+  // group of their own, which is never folder-grouped.
+  final folderGrouped =
+      (config.groupProjectByFolder || config.groupProjectByFolderDepth > 0) &&
+          !config.testImports;
   if (formatterSeparates &&
       !config.separateRelativeImports &&
-      !config.noBlankLines &&
       !config.flat &&
+      !folderGrouped &&
       !wantsOrdering) {
     findings.add(const DoctorFinding(
       FindingKind.fight,

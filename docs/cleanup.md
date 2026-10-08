@@ -48,7 +48,12 @@ import that is in use.
 It needs the Dart SDK on `PATH` and a project that resolves — run `dart pub get`
 first — and it costs a full analyzer pass, which is the other reason it is
 opt-in. Under `--dry-run` and `--exit-if-changed` nothing is written: `dart fix`
-runs in its own dry-run mode.
+runs in its own dry-run mode, and `--exit-if-changed` fails when it finds an
+unused import, just as it does for a file that needs sorting.
+
+`dart fix` takes a single directory, so `--remove-unused` always covers the
+whole project: file patterns and `ignored_files` narrow the sort, not this. A
+run that has either set says so in a warning.
 
 ## Sorting `pubspec.yaml`
 
@@ -59,6 +64,10 @@ runs in its own dry-run mode.
 ```sh
 dart run tidy_imports --sort-pubspec
 ```
+
+The result is parsed back before it is written. If the reordered file would say
+anything other than the original — a value landing under the wrong dependency —
+nothing is written and the run fails with an error instead.
 
 To check the dependencies *against the imports* — declared and never used, or
 used from `lib/` while declared only for development — see
