@@ -440,6 +440,73 @@ dependencies:
 
       expect(sortPubspec(input), input);
     });
+
+    test('a blank line inside a dependency keeps its values with it', () {
+      const input = '''
+name: demo
+dependencies:
+  zeta:
+    git:
+      url: https://example.com/zeta.git
+
+      ref: main
+  alpha: ^1.0.0
+''';
+
+      expect(
+        sortPubspec(input),
+        '''
+name: demo
+dependencies:
+  alpha: ^1.0.0
+  zeta:
+    git:
+      url: https://example.com/zeta.git
+
+      ref: main
+''',
+        reason: 'stopping at the blank line handed `ref: main` to alpha, and '
+            'the pubspec that came out no longer parsed',
+      );
+    });
+
+    test('a comment inside a dependency keeps its values with it', () {
+      const input = '''
+name: demo
+dependencies:
+  zeta:
+  # pinned until the next release
+    version: ^1.0.0
+  alpha: ^1.0.0
+''';
+
+      expect(
+        sortPubspec(input),
+        '''
+name: demo
+dependencies:
+  alpha: ^1.0.0
+  zeta:
+  # pinned until the next release
+    version: ^1.0.0
+''',
+      );
+    });
+
+    test('a sorted pubspec without a final newline is left as it is', () {
+      const input = 'name: demo\ndependencies:\n  a: ^1.0.0\n  b: ^1.0.0';
+
+      expect(sortPubspec(input), input);
+    });
+
+    test('a CRLF pubspec stays CRLF on every line it reorders', () {
+      const input = 'name: demo\r\ndependencies:\r\n  b: ^1.0.0\r\n  a: ^1.0.0';
+
+      expect(
+        sortPubspec(input),
+        'name: demo\r\ndependencies:\r\n  a: ^1.0.0\r\n  b: ^1.0.0',
+      );
+    });
   });
 
   group('test imports (fake_/mock_)', () {
@@ -671,6 +738,21 @@ import 'dart:io';
 
       expect(config.featureDepth, 1);
       expect(config.issues.single, contains('feature_depth'));
+    });
+
+    test('a negative group_project_by_folder_depth is reported, not obeyed',
+        () {
+      final config = TidyConfig.fromYaml(
+        loadYaml('group_project_by_folder_depth: -1'),
+      );
+
+      expect(config.groupProjectByFolderDepth, 0);
+      expect(
+        config.issues.single,
+        contains('group_project_by_folder_depth'),
+        reason: '--group-by-folder-depth refuses -1; the config took it '
+            'without a word, even under --strict-config',
+      );
     });
 
     test('reads package_imports', () {

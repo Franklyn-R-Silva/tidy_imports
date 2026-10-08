@@ -1,3 +1,57 @@
+## 2.6.1 (2026-10-08)
+
+Fixes only. Three of them could cost you something: `--sort-pubspec` could
+write a pubspec that no longer parsed, an annotation on an import could end up
+on `main()`, and `--remove-unused --exit-if-changed` passed on a project the
+next run would change.
+
+### Bug Fixes
+
+* `--sort-pubspec` stopped at a blank line or a comment inside a dependency,
+  so the values below it went with the *next* entry — a `git:` block lost its
+  `ref:` and the result did not parse. The block now stays whole, and the
+  result is parsed back before it is written: a sort that would change what
+  the file says is refused with an error, never written
+* `--sort-pubspec` reported a sorted pubspec without a final newline as
+  unsorted, and turned the last line of a CRLF file into LF when it moved it
+* An annotation above an import or export that is not the first one
+  (`@Deprecated(…)`) stayed behind when the directive moved, and annotated
+  whatever followed the block — `main()`, or nothing, which does not compile.
+  It now moves with its directive
+* `--attach-comments` was not stable when the commented import sorts first in
+  its group: the next run read the note as the file's header and moved it
+* `--remove-unused --exit-if-changed` passed when `dart fix` found unused
+  imports, since `dart fix --dry-run` exits 0 either way. It fails now. And it
+  says, in a warning, that file patterns and `ignored_files` do not narrow it
+* A file that could not be written (read-only, locked) ended the run in a
+  stack trace with the rest of the project unsorted. It is one error line now,
+  the run goes on, and it exits 1. The same goes for `--sort-pubspec` and
+  `--doctor --apply`
+* A UTF-8 byte order mark was dropped when a file was rewritten
+* A pattern after `--` that starts with `-` was ignored by the sort, and made
+  `--report` crash
+* `group_project_by_folder_depth` below 0 is reported, as the flag already was
+* `--exit-if-changed` printed "Checked 0 files" on a clean run; it counts the
+  files it checked now. Paths print with `/` on Windows too
+* A line of spaces below the directives counted as code
+* `--doctor`: `blank_lines: false` is a fight with `dart format` 3.13+, which
+  puts the blank lines back — it was treated as the way out of one. Folder
+  grouping is no longer told to turn on `separate_relative_imports`, which
+  changes nothing under it. A rule written with no value is off, as the
+  analyzer reads it. A project on a UNC path (`\\server\share`, `\\wsl$`) has
+  its `analysis_options.yaml` read instead of a false all-clear
+* `--report`: of two sub-packages with the same name, a `package:` import goes
+  to the one the importing file is in. `Future main()` counts as an entry
+  point. `--format=json` with nothing to scan still carries `dependencies`
+
+### Docs
+
+* Contributor notes moved to
+  [`docs/architecture.md`](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/architecture.md);
+  `CONTRIBUTING.md` points newcomers at issues, Discussions and
+  `good first issue`, and lists every source file
+* `SECURITY.md` named `1.x` as the supported line
+
 ## 2.6.0 (2026-09-25)
 
 The tool stops waiting to be told.
@@ -579,7 +633,7 @@ silent file corruption.
   existing suites only exercised the pure functions in `lib/`.
 
 ### Docs
-- `CLAUDE.md` for AI-assisted contributions.
+- Architecture notes for contributors (now `docs/architecture.md`).
 - Corrected the claim that the CLI reads the generated `lib/src/build_info.dart`
   — it does not; `--version` prints the constant in `lib/src/version.dart`.
 

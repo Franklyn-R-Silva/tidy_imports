@@ -1,3 +1,5 @@
+# Security Policy
+
 ## Supported Versions
 
 Security fixes are applied to the latest published release on
@@ -6,7 +8,7 @@ most recent version before reporting an issue.
 
 | Version | Supported |
 |---------|-----------|
-| Latest `1.x` | ✅ |
+| Latest release | ✅ |
 | Older releases | ❌ |
 
 ## Reporting a Vulnerability

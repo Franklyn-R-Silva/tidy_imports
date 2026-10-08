@@ -15,6 +15,7 @@ option, every configuration key, and the reasoning behind the defaults.
 | [CI](ci.md) | GitHub Actions, exit codes, pre-commit, a graph in the job summary |
 | [Using it as a library](library-api.md) | The pure functions behind the CLI |
 | [Coming from import_sorter](migrating-from-import_sorter.md) | What changed, and how to switch |
+| [Architecture](architecture.md) | For contributors: how the code is laid out, and the invariants past bugs taught |
 
 Something missing or wrong? [Open an issue](https://github.com/Franklyn-R-Silva/tidy_imports/issues)
 — a page that says the wrong thing is a bug like any other.

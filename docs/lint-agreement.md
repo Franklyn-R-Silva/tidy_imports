@@ -113,8 +113,10 @@ import 'package:args/args.dart';
 Under `--flat` Flutter stops being special and the headers go away — a comment
 between two runs the lint reads as one section would be a lie about the
 structure. A blank line is written wherever the section changes, which is
-exactly where `dart format` 3.13+ writes one; `--no-blank-lines` gives you the
-tight run back, since the lint reads order, not spacing.
+exactly where `dart format` 3.13+ writes one. The lint reads order, not
+spacing, so `--no-blank-lines` would satisfy it — but on 3.13+ the formatter
+puts those blank lines straight back, and the two tools rewrite each other on
+every run. `--doctor` reports that as a fight.
 
 `export` directives move only when asked. The lint wants them in a block below
 the imports, which is what **`--flat --sort-exports`** produces.

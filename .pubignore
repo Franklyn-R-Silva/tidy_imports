@@ -11,7 +11,6 @@ tool/
 release-please-config.json
 .release-please-manifest.json
 .pre-commit-hooks.yaml
-CLAUDE.md
 
 # The reference lives on GitHub, where the README links to it and Mermaid
 # renders. screenshots/ must stay in: pub.dev reads the images from the package.

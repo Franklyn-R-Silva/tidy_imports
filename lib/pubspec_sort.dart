@@ -13,9 +13,19 @@ const _sortableSections = {
 /// directly above it, so comments and formatting are preserved. See issue
 /// import_sorter#89.
 ///
-/// Returns the rewritten YAML with a trailing newline. If nothing needs
-/// reordering, the content is returned unchanged (trailing newline ensured).
+/// Returns the rewritten YAML. If nothing needs reordering, the content is
+/// returned unchanged — byte for byte, so a file without a final newline is
+/// not reported as unsorted for the lack of one. A CRLF file stays CRLF on
+/// every line, including the one that used to be last.
 String sortPubspec(String pubspecContent) {
+  final crlf = pubspecContent.contains('\r\n');
+  final lf = crlf ? pubspecContent.replaceAll('\r\n', '\n') : pubspecContent;
+  final sorted = _sortLines(lf);
+  if (sorted == lf) return pubspecContent;
+  return crlf ? sorted.replaceAll('\n', '\r\n') : sorted;
+}
+
+String _sortLines(String pubspecContent) {
   final lines = pubspecContent.split('\n');
   final output = <String>[];
 
@@ -64,12 +74,20 @@ String sortPubspec(String pubspecContent) {
         i++;
         // Continuation lines are nested values, indented deeper than the key
         // (3+ spaces). A comment aligned with entries (2 spaces) is treated as
-        // a leading comment of the *next* entry instead.
-        while (i < lines.length &&
-            lines[i].startsWith('   ') &&
-            lines[i].trim().isNotEmpty) {
-          blockLines.add(lines[i]);
-          i++;
+        // a leading comment of the *next* entry instead — unless more of this
+        // entry's values follow it. The same goes for a blank line: stopping
+        // at one used to hand the `ref:` below it to the next entry, which
+        // carried it off and left a pubspec that no longer parsed.
+        while (i < lines.length) {
+          if (_isNested(lines[i])) {
+            blockLines.add(lines[i]);
+            i++;
+            continue;
+          }
+          final resume = _nestedResumesAt(lines, i);
+          if (resume == null) break;
+          blockLines.addAll(lines.sublist(i, resume));
+          i = resume;
         }
         blocks.add(_Entry(key, blockLines));
       } else {
@@ -89,8 +107,21 @@ String sortPubspec(String pubspecContent) {
     output.addAll(pendingComments);
   }
 
-  final result = output.join('\n');
-  return result.endsWith('\n') ? result : '$result\n';
+  return output.join('\n');
+}
+
+/// Whether [line] is a nested value of the entry above it.
+bool _isNested(String line) => line.startsWith('   ') && line.trim().isNotEmpty;
+
+/// When the blank and comment lines starting at [index] are followed by more
+/// nested values, the index of the first of those values; otherwise null.
+int? _nestedResumesAt(List<String> lines, int index) {
+  for (var j = index; j < lines.length; j++) {
+    final trimmed = lines[j].trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+    return j > index && _isNested(lines[j]) ? j : null;
+  }
+  return null;
 }
 
 /// Returns the section name if [line] is a sortable top-level section header.

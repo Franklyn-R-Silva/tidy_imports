@@ -48,6 +48,33 @@ linter:
       expect(lints.has('always_use_package_imports'), isFalse);
     });
 
+    test('a rule with no value is off, as the analyzer reads it', () {
+      final lints = lintsOf({
+        '/p/analysis_options.yaml':
+            'linter:\n  rules:\n    directives_ordering:\n',
+      });
+
+      expect(lints.has('directives_ordering'), isFalse);
+    });
+
+    test('reads through a UNC path', () {
+      final lints = readLints(
+        r'\\server\share\p\analysis_options.yaml',
+        read: (path) => {
+          '//server/share/p/analysis_options.yaml':
+              'linter:\n  rules:\n    - directives_ordering\n',
+        }[path],
+        packageDir: (_) => null,
+      );
+
+      expect(
+        lints.has('directives_ordering'),
+        isTrue,
+        reason: 'the two leading slashes were folded into one, the read went '
+            'to /server/share, and the doctor gave a false all-clear',
+      );
+    });
+
     test('follows a package: include and names it as the source', () {
       final lints = lintsOf(
         {
@@ -306,13 +333,42 @@ linter:
       );
     });
 
-    test('without blank lines there is nothing for the formatter to undo', () {
+    test('blank_lines off fights dart format 3.13+, in every mode', () {
+      for (final yaml in [
+        'blank_lines: false',
+        'blank_lines: false\nflat: true'
+      ]) {
+        final finding = check(on([]), config(yaml)).single;
+
+        expect(finding.kind, FindingKind.fight, reason: yaml);
+        expect(
+          finding.fix,
+          {'blank_lines': true},
+          reason: 'the formatter writes a blank line wherever the section '
+              'changes, and the next run took it back out',
+        );
+      }
+      expect(check(on([]), config('blank_lines: false'), false), isEmpty,
+          reason: 'an older formatter does not separate');
+    });
+
+    test('folder grouping already separates the relative imports', () {
       expect(
         check(
           on([]),
-          config('separate_relative_imports: false\nblank_lines: false'),
+          config('separate_relative_imports: false\n'
+              'group_project_by_folder: true'),
         ),
         isEmpty,
+      );
+      expect(
+        check(
+          on([]),
+          config('separate_relative_imports: false\n'
+              'group_project_by_folder: true\ntest_imports: true'),
+        ).single.kind,
+        FindingKind.fight,
+        reason: 'the test-double group is never folder-grouped',
       );
     });
 

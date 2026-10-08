@@ -358,6 +358,26 @@ void main(List<String> args) {
     ));
   }
 
+  // Whether an import is *used* is a question about resolved elements, not
+  // about text, and this tool deliberately never resolves anything. The
+  // analyzer already answers it — and ships with every SDK — so `dart fix`
+  // does the removal and the sort that follows tidies up the gaps it leaves.
+  // It runs before the sort header is opened, so their output never shares a
+  // line.
+  var unusedFound = false;
+  if (removeUnused) {
+    // `dart fix` takes a single directory, so it always covers the whole
+    // project. Saying so beats quietly editing a file the patterns or
+    // `ignored_files` were meant to keep out of the run.
+    if (argResults.rest.isNotEmpty || ignoredFiles.isNotEmpty) {
+      stderr.writeln('Warning: --remove-unused runs `dart fix` over the whole '
+          'project; file patterns and ignored_files do not narrow it.');
+    }
+    final unused = _removeUnusedImports(currentPath, readOnly: readOnly);
+    if (unused.exitCode != 0) exit(unused.exitCode);
+    unusedFound = unused.proposed;
+  }
+
   final label = readOnly ? 'Checking' : 'Sorting';
   stdout.write('┏━━ $label ${dartFiles.length} dart files');
   if (dryRun) stdout.write(' (dry run — no files will be written)');
@@ -365,17 +385,8 @@ void main(List<String> args) {
   final stopwatch = Stopwatch()..start();
   final sortedFiles = <String>[];
   var duplicatesRemoved = 0;
-  var unreadable = 0;
+  var failed = 0;
   final success = '✔'.green();
-
-  // Whether an import is *used* is a question about resolved elements, not
-  // about text, and this tool deliberately never resolves anything. The
-  // analyzer already answers it — and ships with every SDK — so `dart fix`
-  // does the removal and the sort that follows tidies up the gaps it leaves.
-  if (removeUnused) {
-    final code = _removeUnusedImports(currentPath, readOnly: readOnly);
-    if (code != 0) exit(code);
-  }
 
   for (final filePath in dartFiles.keys) {
     final file = dartFiles[filePath];
@@ -391,11 +402,11 @@ void main(List<String> args) {
       // it simply stays unsorted — but it is still an error, reported once.
       // The header line above is still open; close it before the first error.
       stderr.writeln(
-        '${unreadable == 0 ? '\n' : ''}Error: could not read '
+        '${failed == 0 ? '\n' : ''}Error: could not read '
         '${files.toPosix(filePath.replaceFirst(currentPath, ''))}: '
         '${e.osError?.message ?? e.message}',
       );
-      unreadable++;
+      failed++;
       continue;
     }
     final usesCrlf = rawContent.contains('\r\n');
@@ -431,7 +442,24 @@ void main(List<String> args) {
     final output = usesCrlf
         ? result.sortedFile.replaceAll('\n', '\r\n')
         : result.sortedFile;
-    if (!readOnly) file.writeAsStringSync(output);
+    if (!readOnly) {
+      // A read-only file used to end the whole run in a stack trace, leaving
+      // every file after it unsorted. It is one error line now, like a file
+      // that could not be read, and the run goes on.
+      try {
+        // `readAsStringSync` drops a byte order mark; put it back, or the
+        // first line of the file shows up in the diff for no visible reason.
+        file.writeAsStringSync(_hasBom(file) ? '﻿$output' : output);
+      } on FileSystemException catch (e) {
+        stderr.writeln(
+          '${failed == 0 ? '\n' : ''}Error: could not write '
+          '${files.toPosix(filePath.replaceFirst(currentPath, ''))}: '
+          '${e.osError?.message ?? e.message}',
+        );
+        failed++;
+        continue;
+      }
+    }
     sortedFiles.add(filePath);
   }
 
@@ -444,7 +472,7 @@ void main(List<String> args) {
       : (dryRun ? 'Would sort' : 'Sorted imports for');
   for (var i = 0; i < sortedFiles.length; i++) {
     final file = dartFiles[sortedFiles[i]]!;
-    final relativePath = file.path.replaceFirst(currentPath, '');
+    final relativePath = files.toPosix(file.path.replaceFirst(currentPath, ''));
     final isLast = i == sortedFiles.length - 1;
     stdout.writeln(
       '${sortedFiles.length == 1 ? '\n' : ''}┃  ${isLast ? '┗' : '┣'}━━ $success $verb $relativePath',
@@ -454,30 +482,54 @@ void main(List<String> args) {
   if (sortedFiles.isEmpty) stdout.write('\n');
 
   final elapsed = (stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2);
-  final action = exitOnChange ? 'Checked' : (dryRun ? 'Would sort' : 'Sorted');
+  // Under --exit-if-changed the count is of files *checked*: it used to print
+  // the unsorted ones under that word, so a clean run said "Checked 0 files".
+  final summary = exitOnChange
+      ? 'Checked ${dartFiles.length} files, ${sortedFiles.length} need sorting'
+      : '${dryRun ? 'Would sort' : 'Sorted'} ${sortedFiles.length} files';
   final folded = duplicatesRemoved == 0
       ? ''
       : ', ${dryRun || exitOnChange ? 'found' : 'dropped'} $duplicatesRemoved '
           'duplicate ${duplicatesRemoved == 1 ? 'import' : 'imports'}';
-  stdout.writeln(
-      '┗━━ $success $action ${sortedFiles.length} files$folded in ${elapsed}s');
+  stdout.writeln('┗━━ $success $summary$folded in ${elapsed}s');
 
   // Optionally sort pubspec.yaml dependency sections (issue import_sorter#89).
   var pubspecUnsorted = false;
   if (sortPubspec) {
     final original = pubspecYamlFile.readAsStringSync();
     final sorted = pubspec_sort.sortPubspec(original);
-    if (sorted != original) {
+    if (sorted != original && !_samePubspec(original, sorted)) {
+      // The sort moves lines, so a layout it misreads moves a value from one
+      // dependency to another. It did, once, and wrote a pubspec that no
+      // longer parsed. The result is read back first now: a sort that would
+      // change what the file says is refused, never written.
+      stderr.writeln('Error: pubspec.yaml is laid out in a way --sort-pubspec '
+          'cannot reorder without changing what it says. It was left as it '
+          'is — please open an issue with the dependency section.');
+      failed++;
+    } else if (sorted != original) {
       pubspecUnsorted = true;
-      if (!readOnly) pubspecYamlFile.writeAsStringSync(sorted);
+      var written = true;
+      if (!readOnly) {
+        try {
+          pubspecYamlFile.writeAsStringSync(sorted);
+        } on FileSystemException catch (e) {
+          stderr.writeln('Error: could not write pubspec.yaml: '
+              '${e.osError?.message ?? e.message}');
+          failed++;
+          written = false;
+        }
+      }
       final pubspecVerb =
           exitOnChange ? 'Needs sorting:' : (dryRun ? 'Would sort' : 'Sorted');
-      stdout.writeln('$success $pubspecVerb pubspec.yaml dependencies');
+      if (written) {
+        stdout.writeln('$success $pubspecVerb pubspec.yaml dependencies');
+      }
     }
   }
 
-  if (unreadable > 0) {
-    stderr.writeln('\n🚨 $unreadable file(s) could not be read.');
+  if (failed > 0) {
+    stderr.writeln('\n🚨 $failed file(s) could not be read or written.');
     exit(1);
   }
 
@@ -487,22 +539,76 @@ void main(List<String> args) {
     stderr.writeln(
       '\n🚨 $count file(s) are not sorted. Run `dart run tidy_imports` to fix.',
     );
+  }
+  // `dart fix --dry-run` exits 0 whether or not it found anything, so the
+  // unused imports it lists have to be counted here or the gate passes on
+  // a project the next real run would change.
+  if (exitOnChange && unusedFound) {
+    stderr.writeln('\n🚨 Unused imports found. Run '
+        '`dart run tidy_imports --remove-unused` to remove them.');
+  }
+  if (exitOnChange &&
+      (sortedFiles.isNotEmpty || pubspecUnsorted || unusedFound)) {
     exit(1);
+  }
+}
+
+/// Whether [before] and [after] read as the same YAML document, mapping key
+/// order aside — all `--sort-pubspec` is allowed to change.
+bool _samePubspec(String before, String after) {
+  Object? canonical(Object? node) {
+    if (node is Map) {
+      final entries = [
+        for (final entry in node.entries)
+          MapEntry('${entry.key}', canonical(entry.value)),
+      ]..sort((a, b) => a.key.compareTo(b.key));
+      return Map.fromEntries(entries);
+    }
+    if (node is List) return [for (final item in node) canonical(item)];
+    return node;
+  }
+
+  try {
+    return jsonEncode(canonical(loadYaml(before))) ==
+        jsonEncode(canonical(loadYaml(after)));
+  } on YamlException {
+    return false;
+  }
+}
+
+/// Whether [file] opens with a UTF-8 byte order mark.
+bool _hasBom(File file) {
+  RandomAccessFile? handle;
+  try {
+    handle = file.openSync();
+    final head = handle.readSync(3);
+    return head.length == 3 &&
+        head[0] == 0xEF &&
+        head[1] == 0xBB &&
+        head[2] == 0xBF;
+  } on FileSystemException {
+    return false;
+  } finally {
+    handle?.closeSync();
   }
 }
 
 /// Runs `dart fix` for `unused_import` over [projectPath].
 ///
-/// Returns 0 to carry on, or an exit code to stop with. Under [readOnly] it
-/// only reports: `--dry-run` and `--exit-if-changed` promise not to write, and
-/// that promise has to cover the fixes too.
+/// `exitCode` is 0 to carry on, or an exit code to stop with. Under [readOnly]
+/// it only reports: `--dry-run` and `--exit-if-changed` promise not to write,
+/// and that promise has to cover the fixes too — `proposed` then says whether
+/// a real run would have removed anything.
 ///
 /// This shells out on purpose. Knowing an import is unused means resolving
 /// every identifier in the file to the library that declares it — extension
 /// methods and all — and the analyzer that ships with the SDK already does it
 /// correctly. Reimplementing it on top of text matching would remove imports
 /// that are in use.
-int _removeUnusedImports(String projectPath, {required bool readOnly}) {
+({int exitCode, bool proposed}) _removeUnusedImports(
+  String projectPath, {
+  required bool readOnly,
+}) {
   final dart = _dartExecutable();
   final args = [
     'fix',
@@ -521,7 +627,7 @@ int _removeUnusedImports(String projectPath, {required bool readOnly}) {
   } on ProcessException catch (e) {
     stderr.writeln('Error: could not run `dart fix`: ${e.message}');
     stderr.writeln('--remove-unused needs the Dart SDK on PATH.');
-    return 1;
+    return (exitCode: 1, proposed: false);
   }
 
   final output = '${result.stdout}'.trim();
@@ -533,9 +639,13 @@ int _removeUnusedImports(String projectPath, {required bool readOnly}) {
       'Error: `dart fix` failed. It needs a project that resolves — try '
       '`dart pub get` first.',
     );
-    return result.exitCode;
+    return (exitCode: result.exitCode, proposed: false);
   }
-  return 0;
+  // A dry run lists what it would do as "N proposed fix(es) in M file(s)".
+  return (
+    exitCode: 0,
+    proposed: readOnly && RegExp(r'\d+ proposed fix').hasMatch(output),
+  );
 }
 
 /// The `dart` binary to shell out to.
@@ -616,6 +726,9 @@ int _report(
         cycles: const [],
         unreachable: const [],
         featureDepth: featureDepth,
+        // Every other document carries the key; a consumer reading it should
+        // not have to special-case a project with nothing to scan.
+        dependencies: const {'unused': <String>[], 'devOnly': <Object>[]},
       );
       stdout.write(switch (format) {
         'json' => '${const JsonEncoder.withIndent('  ').convert(document)}\n',
@@ -1134,7 +1247,13 @@ bool _applyFixes(
         '(read-only run — nothing written)');
     return false;
   }
-  target.writeAsStringSync(edited);
+  try {
+    target.writeAsStringSync(edited);
+  } on FileSystemException catch (e) {
+    stderr.writeln('Error: could not write $name: '
+        '${e.osError?.message ?? e.message}');
+    exit(1);
+  }
   stdout.writeln('\n${'✔'.green()} Wrote ${_describe(fixes)} to $name');
   return true;
 }

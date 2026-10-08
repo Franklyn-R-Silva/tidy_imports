@@ -28,7 +28,8 @@ body:
     id: version
     attributes:
       label: tidy_imports version
-      placeholder: "1.0.0"
+      description: Output of `dart run tidy_imports --version`.
+      placeholder: "tidy_imports x.y.z"
     validations:
       required: true
   - type: input
