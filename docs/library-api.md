@@ -63,7 +63,7 @@ void main() {
 
 | Symbol | What it is |
 |---|---|
-| `dartFiles(root, patterns, {extraDirectories})` | File discovery — no links followed, hidden and `build/` directories skipped. Throws `FormatException` on a bad pattern |
+| `dartFiles(root, patterns, {extraDirectories, includeFiles})` | File discovery — `includeFiles` adds project-relative regex matches to the standard directories; no links followed, hidden and `build/` directories skipped. Throws `FormatException` on a bad pattern |
 | `compilePatterns(patterns, label)`, `toPosix(path)` | The pattern and path helpers the CLI uses |
 | `standardDirectories`, `reportDirectories` | Where the sorter and the report look |
 

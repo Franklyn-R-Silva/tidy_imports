@@ -23,6 +23,7 @@ const _knownKeys = {
   'test_imports',
   'test_import_prefixes',
   'ignored_files',
+  'include_files',
   'ignored_dependencies',
   'report_roots',
   'feature_depth',
@@ -121,6 +122,10 @@ class TidyConfig {
   final bool testImports;
   final List<String> testImportPrefixes;
   final List<String> ignoredFiles;
+
+  /// Additional Dart files to discover, as regexes on project-relative paths
+  /// with a leading slash. Extends the standard directories; exclusions win.
+  final List<String> includeFiles;
   final List<CustomTier> customTiers;
 
   /// Extra entry points for `--report`, as regular expressions matched against
@@ -199,6 +204,7 @@ class TidyConfig {
     required this.groupProjectByFolder,
     required this.ignoredFiles,
     required this.customTiers,
+    this.includeFiles = const [],
     this.separateRelativeImports = true,
     this.testImports = false,
     this.testImportPrefixes = defaultTestImportPrefixes,
@@ -349,6 +355,7 @@ class TidyConfig {
       testImportPrefixes:
           testPrefixes.isEmpty ? defaultTestImportPrefixes : testPrefixes,
       ignoredFiles: _readStrings(config, 'ignored_files', issues),
+      includeFiles: _readStrings(config, 'include_files', issues),
       customTiers: _readTiers(config, issues),
       sortExports: _readBool(config, 'sort_exports', issues) ?? false,
       removeDuplicates: _readBool(config, 'remove_duplicates', issues) ?? false,

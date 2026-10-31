@@ -259,6 +259,10 @@ field is not a new version.
 > **Windows PowerShell 5.1** writes `>` redirects as UTF-16. Use
 > `| Out-File -Encoding utf8 imports.json`, or PowerShell 7, or Git Bash.
 
+## Extending discovery
+
+`include_files` adds Dart files outside the standard and report directories, using the same configuration as the sorter. This only extends file discovery; sub-package resolution remains limited to `packages/`. See [configuration](configuration.md#the-configuration-block).
+
 ## Narrowing the report
 
 A positional pattern or an `ignored_files` entry narrows what is **printed**,
