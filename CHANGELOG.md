@@ -1,3 +1,9 @@
+## 2.7.0 (2026-10-31)
+
+### Features
+
+* Add the `include_files` configuration key to discover Dart files outside the standard directories, such as `apps/` or individual scripts (#24). Patterns are regular expressions matched against project-relative paths with a leading slash. They extend the existing selection; `ignored_files` takes precedence and positional CLI patterns filter the combined set The option also extends file discovery for `--report`. An absent or empty list keeps the existing behaviour.
+
 ## 2.6.1 (2026-10-08)
 
 Fixes only. Three of them could cost you something: `--sort-pubspec` could
