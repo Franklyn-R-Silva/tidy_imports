@@ -8,6 +8,9 @@ import 'dart:io';
 // Package imports:
 import 'package:test/test.dart';
 
+// Project imports:
+import 'package:tidy_imports/tidy_imports.dart' as tidy;
+
 /// End-to-end tests for `bin/tidy_imports.dart`.
 ///
 /// The rest of the suite exercises the pure functions in `lib/`; these cover
@@ -120,6 +123,229 @@ tidy_imports:
     expect(run().exitCode, 0);
     expect(generated.readAsStringSync(), unsorted);
     expect(normal.readAsStringSync(), sorted);
+  });
+
+  group('include_files (#24)', () {
+    File at(String path, [String content = unsorted]) =>
+        File('${temp.path}/$path')
+          ..createSync(recursive: true)
+          ..writeAsStringSync(content);
+
+    void configure(String options) =>
+        File('${temp.path}/pubspec.yaml').writeAsStringSync(
+          'name: demo\ntidy_imports:\n$options',
+        );
+
+    test('library discovery combines extra directories and inclusion regexes',
+        () {
+      final standard = at('lib/main.dart');
+      final reportOnly = at('tool/check.dart');
+      final included = at('apps/main.dart');
+      at('unselected/main.dart');
+      for (final root in [temp.path, '${temp.path}/']) {
+        final discovered = tidy.dartFiles(
+          root,
+          [],
+          extraDirectories: ['tool'],
+          includeFiles: ['^/apps/'],
+        );
+        expect(
+          discovered.values.map((f) => f.resolveSymbolicLinksSync()),
+          unorderedEquals([
+            standard.resolveSymbolicLinksSync(),
+            reportOnly.resolveSymbolicLinksSync(),
+            included.resolveSymbolicLinksSync(),
+          ]),
+        );
+        final filtered = tidy.dartFiles(
+          root,
+          ['apps/'],
+          extraDirectories: ['tool'],
+          includeFiles: ['^/apps/'],
+        );
+        expect(filtered.values.single.resolveSymbolicLinksSync(),
+            included.resolveSymbolicLinksSync());
+      }
+    });
+
+    test('extends the standard selection with folders and exact files', () {
+      configure(r'''
+  include_files:
+    - ^/apps/
+    - ^/scripts/example\.dart$
+    - ^/root\.dart$
+    - /lib/
+    - /apps/mobile/
+''');
+      final selected = [
+        for (final dir in [
+          'lib',
+          'src',
+          'bin',
+          'test',
+          'tests',
+          'test_driver',
+          'integration_test',
+          'packages',
+        ])
+          at('$dir/a.dart'),
+        at('apps/mobile/lib/main.dart'),
+        at('apps/web/lib/main.dart'),
+        at('scripts/example.dart'),
+        at('root.dart'),
+      ];
+      final untouched = [
+        at('scripts/exampleXdart.dart'),
+        at('scripts/example.dart.bak'),
+        at('scripts/other.dart'),
+        at('other/main.dart'),
+        at('apps/readme.txt'),
+      ];
+      final result = run(['--strict-config']);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(result.stderr, isEmpty);
+      for (final file in selected) {
+        expect(file.readAsStringSync(), sorted, reason: file.path);
+      }
+      for (final file in untouched) {
+        expect(file.readAsStringSync(), unsorted, reason: file.path);
+      }
+      expect(result.stdout, contains('${selected.length} dart files'));
+      expect(run(['--exit-if-changed']).exitCode, 0);
+    });
+
+    test('absent, empty and ignored config keep the standard selection', () {
+      final standard = at('lib/main.dart');
+      final extra = at('apps/mobile/lib/main.dart');
+      for (final options in ['', '  include_files: []\n']) {
+        configure(options);
+        standard.writeAsStringSync(unsorted);
+        expect(run().exitCode, 0);
+        expect(standard.readAsStringSync(), sorted);
+        expect(extra.readAsStringSync(), unsorted);
+      }
+      configure('  include_files: [/apps/]\n');
+      expect(run(['--ignore-config']).exitCode, 0);
+      expect(extra.readAsStringSync(), unsorted);
+    });
+
+    test('standalone replaces pubspec inclusions without merging', () {
+      configure('  include_files: [/apps/]\n');
+      at('tidy_imports.yaml', 'include_files: [/scripts/]\n');
+      final app = at('apps/main.dart');
+      final script = at('scripts/main.dart');
+      expect(run().exitCode, 0);
+      expect(app.readAsStringSync(), unsorted);
+      expect(script.readAsStringSync(), sorted);
+    });
+
+    test('exclusions win and positional patterns narrow the combined set', () {
+      configure(r'''
+  include_files: [/apps/]
+  ignored_files:
+    - \.g\.dart$
+''');
+      final standard = at('lib/main.dart');
+      final selected = at('apps/mobile/main.dart');
+      final generated = at('apps/mobile/model.g.dart');
+      final other = at('apps/web/main.dart');
+      expect(run(['apps/mobile/']).exitCode, 0);
+      expect(selected.readAsStringSync(), sorted);
+      for (final file in [standard, generated, other]) {
+        expect(file.readAsStringSync(), unsorted);
+      }
+    });
+
+    test('read-only modes cover added files without writing', () {
+      configure('  include_files: [/apps/]\n');
+      final file = at('apps/mobile/main.dart');
+      for (final mode in ['--dry-run', '--exit-if-changed']) {
+        final result = run([mode]);
+        expect(result.exitCode, mode == '--dry-run' ? 0 : 1);
+        expect(result.stdout, contains('main.dart'));
+        expect(file.readAsStringSync(), unsorted);
+      }
+    });
+
+    test('invalid regex fails before writes, even with nothing to scan', () {
+      configure("  include_files: ['[']\n");
+      for (final withFile in [false, true]) {
+        if (withFile) at('lib/main.dart');
+        for (final args in [
+          <String>[],
+          ['--report', '--format=json']
+        ]) {
+          final result = run(args);
+          expect(result.exitCode, 1);
+          expect(result.stderr, contains('invalid include_files entry'));
+          expect(result.stderr, isNot(contains('#0 ')));
+        }
+      }
+      expect(libFile('main.dart').readAsStringSync(), unsorted);
+    });
+
+    test('strict config refuses an invalid list before writes', () {
+      configure('  include_files: [/apps/, 42]\n');
+      final file = at('apps/main.dart');
+      final result = run(['--strict-config']);
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('include_files'));
+      expect(file.readAsStringSync(), unsorted);
+    });
+
+    test('broad inclusions still skip hidden directories and build output', () {
+      configure("  include_files: ['.*']\n");
+      at('apps/mobile/pubspec.yaml', 'name: mobile\n');
+      final excluded = [
+        at('.dart_tool/cache.dart'),
+        at('build/generated.dart'),
+        at('apps/mobile/.dart_tool/cache.dart'),
+        at('apps/mobile/build/generated.dart'),
+      ];
+      final source = at('apps/mobile/lib/src/build/source.dart');
+      expect(run().exitCode, 0);
+      expect(source.readAsStringSync(), sorted);
+      for (final file in excluded) {
+        expect(file.readAsStringSync(), unsorted, reason: file.path);
+      }
+    });
+
+    test('inclusions never follow directory or file links', () {
+      configure("  include_files: ['.*']\n");
+      final outside = Directory.systemTemp.createTempSync('tidy_include_link_');
+      addTearDown(() => outside.deleteSync(recursive: true));
+      final foreign = File('${outside.path}/plugin.dart')
+        ..writeAsStringSync(unsorted);
+      Directory('${temp.path}/apps').createSync();
+      try {
+        Link('${temp.path}/apps/linked').createSync(outside.path);
+        Link('${temp.path}/apps/linked.dart').createSync(foreign.path);
+      } on FileSystemException {
+        markTestSkipped('this platform does not allow creating a link here');
+        return;
+      }
+      expect(run().exitCode, 0);
+      expect(run(['--report']).exitCode, 0);
+      expect(foreign.readAsStringSync(), unsorted);
+    });
+
+    test('report keeps excluded and filtered importers in its graph', () {
+      configure('''
+  include_files: [/scripts/]
+  ignored_files: [/scripts/]
+''');
+      at('lib/src/used.dart', 'class Used {}\n');
+      final importer = at('scripts/start.dart',
+          "import 'package:demo/src/used.dart';\nvoid main() {}\n");
+      final result = run(['--report', '--format=json', 'lib/']);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final report = jsonDecode(result.stdout as String) as Map;
+      expect(report['unreachable'], isEmpty);
+      expect((report['files'] as List).map((f) => f['path']),
+          ['lib/src/used.dart']);
+      expect(importer.readAsStringSync(),
+          "import 'package:demo/src/used.dart';\nvoid main() {}\n");
+    });
   });
 
   test('--test-imports splits project test doubles out', () {

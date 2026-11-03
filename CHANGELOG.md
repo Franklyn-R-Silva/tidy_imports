@@ -1,3 +1,13 @@
+## 2.7.0 (2026-11-03)
+
+### Features
+
+* `include_files` brings Dart files outside the scanned directories — an
+  `apps/` folder, a lone script — into the sort and into `--report` (#24).
+  Regexes on the project-relative path, like `ignored_files`, which still wins;
+  a positional pattern narrows the combined set. Unset, nothing changes.
+  Contributed by Francesco Amonini
+
 ## 2.6.1 (2026-10-08)
 
 Fixes only. Three of them could cost you something: `--sort-pubspec` could

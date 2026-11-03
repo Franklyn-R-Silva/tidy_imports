@@ -286,7 +286,11 @@ void main(List<String> args) {
   // not a crash.
   final Map<String, File> dartFiles;
   try {
-    dartFiles = files.dartFiles(currentPath, argResults.rest);
+    dartFiles = files.dartFiles(
+      currentPath,
+      argResults.rest,
+      includeFiles: config.includeFiles,
+    );
   } on FormatException catch (e) {
     stderr.writeln('Error: ${e.message}');
     exit(1);
@@ -349,6 +353,7 @@ void main(List<String> args) {
       packageName,
       pubspecYaml,
       patterns: argResults.rest,
+      includeFiles: config.includeFiles,
       ignoreMatchers: ignoreMatchers,
       reportRoots: config.reportRoots,
       ignoredDependencies: config.ignoredDependencies,
@@ -692,6 +697,7 @@ int _report(
   String packageName,
   YamlMap pubspec, {
   required List<String> patterns,
+  required List<String> includeFiles,
   required List<RegExp> ignoreMatchers,
   required List<String> reportRoots,
   required List<String> ignoredDependencies,
@@ -704,6 +710,7 @@ int _report(
     currentPath,
     const [],
     extraDirectories: files.reportDirectories,
+    includeFiles: includeFiles,
   );
 
   if (scanned.isEmpty) {

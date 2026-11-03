@@ -717,6 +717,7 @@ import 'dart:io';
       expect(config.sortPubspec, isFalse);
       expect(config.groupProjectByFolder, isFalse);
       expect(config.ignoredFiles, isEmpty);
+      expect(config.includeFiles, isEmpty);
       expect(config.customTiers, isEmpty);
       expect(config.testImports, isFalse);
       expect(config.testImportPrefixes, ['fake_', 'mock_']);
@@ -726,6 +727,33 @@ import 'dart:io';
       expect(config.flat, isFalse);
       expect(config.relativeImports, isFalse);
       expect(config.packageImports, isFalse);
+    });
+
+    test('include_files reads regexes and defaults to an empty list', () {
+      for (final source in ['', 'include_files: []', 'include_files: null']) {
+        expect(TidyConfig.fromYaml(loadYaml(source)).includeFiles, isEmpty);
+      }
+      final config = TidyConfig.fromStandalone(
+        loadYaml(r'''
+include_files:
+  - /apps/
+  - ^/scripts/example\.dart$
+'''),
+      );
+      expect(config.includeFiles, ['/apps/', r'^/scripts/example\.dart$']);
+      expect(config.issues, isEmpty);
+    });
+
+    test('include_files reports invalid types and keeps valid entries', () {
+      final scalar = TidyConfig.fromYaml(loadYaml('include_files: /apps/'));
+      expect(scalar.includeFiles, isEmpty);
+      expect(scalar.issues.single, contains('include_files'));
+
+      final mixed = TidyConfig.fromYaml(
+        loadYaml('include_files: [/apps/, 42, /scripts/]'),
+      );
+      expect(mixed.includeFiles, ['/apps/', '/scripts/']);
+      expect(mixed.issues.single, contains('include_files'));
     });
 
     test('feature_depth defaults to 1 and reads a larger value', () {
@@ -919,6 +947,8 @@ test_import_prefixes:
   - fake_
 ignored_files:
   - \\.g\\.dart\$
+include_files:
+  - /apps/
 report_roots:
   - /lib/app/bootstrap.dart
 ignored_dependencies:

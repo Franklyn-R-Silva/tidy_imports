@@ -305,3 +305,8 @@ The graph is built from directives, nothing else. Code reached by
 and so is a package used without an import. An "unreachable" file or an "unused"
 dependency is a question to answer, not an instruction to follow. Read before
 deleting.
+
+Files [`include_files`](configuration.md#the-configuration-block) brings in are
+read, but a package among them is not resolved the way one under `packages/`
+is: none of its files is reported dead, and its imports are not checked against
+its own `pubspec.yaml`.

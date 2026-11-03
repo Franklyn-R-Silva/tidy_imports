@@ -1,7 +1,7 @@
 // Dart imports:
 import 'dart:io';
 
-/// The directories the sorter walks. Anything else is left alone.
+/// The directories the sorter walks by default.
 const standardDirectories = [
   'lib',
   'src',
@@ -24,7 +24,12 @@ const standardDirectories = [
 const reportDirectories = ['example', 'tool', 'web', 'benchmark', 'hook'];
 
 /// Returns all dart files found in [standardDirectories], plus any
-/// [extraDirectories].
+/// [extraDirectories] and files matching [includeFiles].
+///
+/// [includeFiles] extends discovery with regexes on project-relative POSIX
+/// paths including the leading slash (such as `/apps/mobile/lib/main.dart`).
+/// An empty list keeps the standard walk. Links, hidden directories and package
+/// build output stay excluded even when an inclusion pattern matches them.
 ///
 /// Positional [args] are treated as regular expressions matched against the
 /// absolute file path. Throws a [FormatException] with a readable message if a
@@ -33,7 +38,9 @@ Map<String, File> dartFiles(
   String currentPath,
   List<String> args, {
   List<String> extraDirectories = const [],
+  List<String> includeFiles = const [],
 }) {
+  final includeMatchers = compilePatterns(includeFiles, 'include_files entry');
   final dartFiles = <String, File>{};
   final allContents = [
     for (final dir in standardDirectories) ..._readDir(currentPath, dir),
@@ -43,6 +50,19 @@ Map<String, File> dartFiles(
   for (final fileOrDir in allContents) {
     if (fileOrDir is File && fileOrDir.path.endsWith('.dart')) {
       dartFiles[fileOrDir.path] = fileOrDir;
+    }
+  }
+
+  // Inclusions add files outside the standard directories (issue #24).
+  // Reuse the existing walk so hidden directories and build output stay out.
+  if (includeMatchers.isNotEmpty) {
+    for (final entity in _readDir(currentPath, '')) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      final suffix = toPosix(entity.path.substring(currentPath.length));
+      final relative = suffix.startsWith('/') ? suffix : '/$suffix';
+      if (includeMatchers.any((matcher) => matcher.hasMatch(relative))) {
+        dartFiles[entity.path] = entity;
+      }
     }
   }
 

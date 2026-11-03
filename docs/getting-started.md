@@ -75,6 +75,16 @@ carries links into the pub cache, and nothing there is yours to rewrite.
 
 ### Monorepos and pub workspaces
 
+Packages under `packages/` are found on their own. Apps or packages kept
+anywhere else join the run with
+[`include_files`](configuration.md#the-configuration-block):
+
+```yaml
+tidy_imports:
+  include_files:
+    - /apps/          # apps/mobile/, apps/web/, ...
+```
+
 Packages inside a pub workspace have no `pubspec.lock` of their own. When none
 is found the run continues normally; the only thing lost is skipping the
 Flutter plugin registrant, which a workspace member rarely has.

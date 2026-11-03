@@ -69,7 +69,7 @@ your app imports:
 
 ```yaml
 dev_dependencies:
-  tidy_imports: ^2.6.1
+  tidy_imports: ^2.7.0
 ```
 
 ### Before
@@ -253,6 +253,8 @@ tidy_imports:
   flat: true
   sort_exports: true
   package_imports: true
+  include_files:
+    - /apps/
   ignored_files:
     - \.g\.dart$
   tiers:
@@ -303,7 +305,7 @@ never a stack trace.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v2.6.1'
+    rev: 'v2.7.0'
     hooks:
       - id: dart-import-sorter      # or flutter-import-sorter
 ```
