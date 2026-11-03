@@ -259,10 +259,6 @@ field is not a new version.
 > **Windows PowerShell 5.1** writes `>` redirects as UTF-16. Use
 > `| Out-File -Encoding utf8 imports.json`, or PowerShell 7, or Git Bash.
 
-## Extending discovery
-
-`include_files` adds Dart files outside the standard and report directories, using the same configuration as the sorter. This only extends file discovery; sub-package resolution remains limited to `packages/`. See [configuration](configuration.md#the-configuration-block).
-
 ## Narrowing the report
 
 A positional pattern or an `ignored_files` entry narrows what is **printed**,
@@ -309,3 +305,8 @@ The graph is built from directives, nothing else. Code reached by
 and so is a package used without an import. An "unreachable" file or an "unused"
 dependency is a question to answer, not an instruction to follow. Read before
 deleting.
+
+Files [`include_files`](configuration.md#the-configuration-block) brings in are
+read, but a package among them is not resolved the way one under `packages/`
+is: none of its files is reported dead, and its imports are not checked against
+its own `pubspec.yaml`.

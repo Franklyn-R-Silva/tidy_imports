@@ -75,18 +75,15 @@ carries links into the pub cache, and nothing there is yours to rewrite.
 
 ### Monorepos and pub workspaces
 
-For other layouts, extend the standard selection with `include_files`:
+Packages under `packages/` are found on their own. Apps or packages kept
+anywhere else join the run with
+[`include_files`](configuration.md#the-configuration-block):
 
 ```yaml
 tidy_imports:
   include_files:
-    - /apps/                   # apps/mobile/, apps/web/, ...
-    - ^/scripts/example\.dart$ # one file
-  ignored_files:
-    - \.g\.dart$
+    - /apps/          # apps/mobile/, apps/web/, ...
 ```
-
-The standard directories are still scanned. Inclusions use regexes on the project-relative path, including its leading slash. `ignored_files` takes precedence, and positional patterns narrow the combined selection. The same link, hidden-directory and build-output protections apply. See [configuration](configuration.md#the-configuration-block).
 
 Packages inside a pub workspace have no `pubspec.lock` of their own. When none
 is found the run continues normally; the only thing lost is skipping the

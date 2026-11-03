@@ -255,15 +255,12 @@ tidy_imports:
   package_imports: true
   include_files:
     - /apps/
-    - ^/scripts/example\.dart$
   ignored_files:
     - \.g\.dart$
   tiers:
     - name: "Company imports:"
       pattern: "package:acme_"
 ```
-
-`include_files` extends the standard directories with additional Dart files. Its regexes match project-relative paths with a leading slash; `ignored_files` takes precedence. An absent or empty list keeps the default selection.
 
 A misspelled option, a value of the wrong type or a file that does not parse is
 a warning naming the key — never silence — and `--strict-config` makes it fatal.

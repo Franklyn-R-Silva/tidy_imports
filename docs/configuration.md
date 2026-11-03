@@ -31,7 +31,7 @@ pubspec block entirely. `--ignore-config` reads neither.
 | `--remove-duplicates` | `remove_duplicates` | off | [Drop an import written twice](cleanup.md#--remove-duplicates) |
 | `--remove-unused` | `remove_unused` | off | [Run `dart fix --code=unused_import` first](cleanup.md#--remove-unused) |
 | `--sort-pubspec` | `sort_pubspec` | off | [Sort the dependency sections](cleanup.md#sorting-pubspecyaml) of `pubspec.yaml` |
-| — | `include_files` | `[]` | Additional Dart files outside the standard directories, matched by project-relative regexes; `ignored_files` takes precedence |
+| — | `include_files` | `[]` | Regexes on the project-relative path: Dart files outside the [directories scanned](getting-started.md#directories-scanned) to sort and report too |
 | — | `ignored_files` | `[]` | Regexes on the project-relative path: files never sorted nor reported |
 | — | `report_roots` | `[]` | [Extra entry points](import-graph.md#what-counts-as-an-entry-point) for `--report` |
 | `--feature-depth=<n>` | `feature_depth` | `1` | [Folders that make a feature](import-graph.md#coupling-between-features) in `--report` |
@@ -74,8 +74,8 @@ tidy_imports:
   remove_duplicates: false
   remove_unused: false
   include_files:
-    - /apps/                 # add a whole folder
-    - ^/scripts/example\.dart$ # add one specific file
+    - /apps/                 # a whole folder
+    - ^/scripts/seed\.dart$  # one file
   ignored_files:
     - /lib/generated/        # a whole folder
     - \.g\.dart$             # build_runner output
@@ -90,11 +90,17 @@ tidy_imports:
       pattern: "package:acme_"
 ```
 
-`include_files`, `ignored_files` and `report_roots` are regular expressions matched against the path relative to the project root, leading slash included: `/lib/src/foo.dart`. Write forward slashes on every platform.
+`include_files`, `ignored_files` and `report_roots` are regular expressions
+matched against the path relative to the project root, leading slash included:
+`/lib/src/foo.dart`. Write forward slashes on every platform.
 
-`include_files` **adds** matching Dart files to the standard selection; it does not replace the standard directories or restrict their files. Missing or empty, it changes nothing. Multiple regexes are combined with OR; overlapping matches process a file once. `ignored_files` wins over inclusions, and positional CLI patterns filter the combined selection. Invalid regexes stop the run before any file is written, even without `--strict-config`.
-
-With inclusions configured, discovery walks the project root to find matches. Links, hidden directories and a package's `build/` output are still skipped. Only `.dart` files are selected. This also extends discovery for `--report`; its exclusions and positional patterns still only narrow the output.
+`include_files` **adds** to the
+[directories scanned](getting-started.md#directories-scanned); it never
+replaces or narrows them. Once set, the walk starts at the project root and
+still skips links, hidden directories and a package's `build/` output.
+`ignored_files` wins over it, and a positional pattern narrows the combined
+set. A malformed regex stops the run before anything is written, with or
+without `--strict-config`.
 
 ## The standalone file
 
