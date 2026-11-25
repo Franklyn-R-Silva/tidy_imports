@@ -6,14 +6,25 @@ on:
   pull_request:
     branches: [master, main]
 
+# Nothing here writes to the repository; a job that ever needs to asks for it.
+permissions:
+  contents: read
+
+# A new push to a PR makes the run in progress obsolete. Runs on main are never
+# cancelled, so every merge keeps a complete result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     name: check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
         with:
           sdk: stable
 
@@ -44,6 +55,9 @@ jobs:
     # branch ruleset; `label` keeps them and only decorates the extra entry.
     name: test (${{ matrix.sdk }})${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # Normally ~2.5 min; the CLI tests spawn processes, and a hung one would
+    # otherwise hold the runner for GitHub's six-hour default.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -57,9 +71,9 @@ jobs:
             os: windows-latest
             label: ' on windows'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
         with:
           sdk: ${{ matrix.sdk }}
 
@@ -85,10 +99,11 @@ jobs:
   min-sdk:
     name: min SDK (3.0.0)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
         with:
           sdk: "3.0.0"
 
@@ -111,3 +126,35 @@ jobs:
           YAML
           dart pub get
           dart run tidy_imports --version
+
+  pana:
+    name: pana
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+
+      # pub.dev scores every upload with pana, and a lost point is only seen
+      # after the version is published for good. It checks what the jobs above
+      # do not: dartdoc coverage of the public API, that the lower bounds of the
+      # dependency constraints still resolve and analyze, and platform support.
+      # Unpinned on purpose: pub.dev always scores with the latest pana.
+      # Threshold 0 = fail on any point below the maximum (160/160 today).
+      - name: Score the package as pub.dev will
+        run: |
+          dart pub global activate pana
+          dart pub global run pana --exit-code-threshold 0
+
+  dependency-review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Dependabot alerts only fire once a vulnerable version is on main; this
+      # stops a PR from bringing one in (a pub package or an action).
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
