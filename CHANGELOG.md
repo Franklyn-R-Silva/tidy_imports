@@ -1,3 +1,42 @@
+## 2.7.1 (2026-11-25)
+
+Fixes, and a README that says when you need the tool — and when you don't.
+
+### Behaviour change
+
+* In a monorepo, a sub-package's own imports move from the Package group to
+  the Project group, where a run inside that package always put them. Expect
+  a one-time diff in `packages/*/` when you run from the root
+
+### Bug Fixes
+
+* A file under `packages/<name>/` — or under any `include_files` folder with a
+  `pubspec.yaml` of its own — was sorted as the root package. Its own
+  `package:<name>/` imports went under Package, and a run inside the
+  sub-package, the way melos runs it, moved them back under Project: the two
+  runs undid each other. Each file is now sorted as the package of the nearest
+  `pubspec.yaml` above it, and `--relative-imports` / `--package-imports` work
+  inside a sub-package's `lib/` too
+* `--sort-pubspec` skipped, without a word, a section whose header carries a
+  comment (`dependencies: # runtime`), and `--exit-if-changed` passed
+* A directory that cannot be listed ended the run — and `--report` — in a
+  `PathAccessException` stack trace. It is one error line and exit 1 now
+
+### Docs
+
+* README: when `dart fix`, your editor's *Organize Imports* or import_sorter is
+  already enough, and what this adds; an FAQ in the words people search with
+* `llms.txt` indexes the docs for AI assistants; the pub.dev description and
+  the Example tab say what the tool does in one read
+* Contributing: a five-minute first contribution, lighter issue and PR
+  templates, questions go to Discussions
+
+### CI
+
+* Workflows run with a read-only token, actions pinned to a commit SHA, and
+  timeouts; `pana` holds the pub.dev score at 160/160; PRs get a dependency
+  review; OpenSSF Scorecard runs on `main`
+
 ## 2.7.0 (2026-11-03)
 
 ### Features
