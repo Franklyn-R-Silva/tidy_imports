@@ -1,154 +1,83 @@
 # Contributing to tidy_imports
 
-Thank you for your interest in contributing!
+Thanks for stopping by. tidy_imports has one maintainer, so every bug report,
+question and pull request helps, and none of them has to be perfect: a
+two-line issue with a sample file is enough to start.
 
-Bug reports and ideas are as welcome as code: open an
-[issue](https://github.com/Franklyn-R-Silva/tidy_imports/issues/new/choose), or
-ask in [Discussions](https://github.com/Franklyn-R-Silva/tidy_imports/discussions)
-if you are not sure it is a bug. Looking for somewhere to start? Issues labelled
-[`good first issue`](https://github.com/Franklyn-R-Silva/tidy_imports/labels/good%20first%20issue)
-are small and self-contained.
+- **Something broke, or you want a feature?**
+  [Open an issue](https://github.com/Franklyn-R-Silva/tidy_imports/issues/new/choose).
+  Only "what happened" is required.
+- **A question, or not sure it is a bug?** Ask in
+  [Discussions](https://github.com/Franklyn-R-Silva/tidy_imports/discussions/categories/q-a).
+- **Want to write code or docs?** Pick an issue labelled
+  [`good first issue`](https://github.com/Franklyn-R-Silva/tidy_imports/labels/good%20first%20issue)
+  or [`help wanted`](https://github.com/Franklyn-R-Silva/tidy_imports/labels/help%20wanted),
+  and leave a comment saying you are on it so nobody duplicates the work. An
+  idea of your own is welcome too; for a large change, open an issue first so
+  we can agree on the shape before you spend the time.
 
-Before changing `lib/` or `bin/`, read [`docs/architecture.md`](docs/architecture.md):
-it explains how the pieces fit, and most of it is an invariant a past bug taught.
+Issues and pull requests usually get a first reply within a few days. Please be
+kind ([Code of Conduct](CODE_OF_CONDUCT.md)), and report security problems
+[privately](SECURITY.md), not in an issue.
 
-## Development Setup
+## Your first contribution in 5 minutes
+
+You need Git and the **Dart SDK 3.8 or newer** (Flutter 3.32 or newer ships
+it). The package supports Dart 3.0, but its dev dependency `lints` needs 3.8 to
+resolve, so `dart pub get` fails on an older SDK.
 
 ```sh
-# Clone the repository
-git clone https://github.com/Franklyn-R-Silva/tidy_imports.git
+# Fork the repository on GitHub, then:
+git clone https://github.com/<your-user>/tidy_imports.git
 cd tidy_imports
-
-# Install dependencies
 dart pub get
 
-# Run tests
-dart test
+# A fast check that the setup works: pure functions, no subprocesses
+dart test test/sort_test.dart
 
-# Run the tool locally (from a Dart project)
-dart run bin/tidy_imports.dart
+# Your working copy of the tool, run on this repository, writing nothing
+dart run bin/tidy_imports.dart --dry-run
+
+git checkout -b fix/short-description
 ```
 
-## Running Quality Checks
+Make the change, add a test next to similar ones (see [Tests](#tests)), push
+the branch and open a pull request. That's it: CI runs every other check.
 
-Run these before pushing — they are the same gates CI applies, so a clean run
-here means a green PR:
+### Before you push
+
+These three catch nearly everything CI does (the full list is in
+[What CI checks](#what-ci-checks)). The full suite takes a couple of minutes,
+since the CLI tests spawn the real binary.
 
 ```sh
 dart format .                          # auto-format
 dart analyze --fatal-infos             # static analysis; infos fail the build
-dart test                              # test suite
-dart run tool/check_version_sync.dart  # pubspec / version.dart / CHANGELOG / README agree
-dart pub publish --dry-run             # the package builds, and ships what it should
+dart test                              # the whole suite
 ```
 
 Note `--fatal-infos`: a lint *info* fails CI, not just a warning.
 
-## Adding an option
+### After you open the pull request
 
-An option lives in five places, and a missing one is a bug a user meets:
+- **First PR here?** GitHub holds the CI run until the maintainer approves it.
+  That is GitHub's default for forks, not a judgement on your change.
+- **CI goes red and you don't know why?** Say so in the PR. Help is part of the
+  review.
+- **No version bump, no changelog entry needed.** Both are written when a
+  release is cut, and you are credited there.
+- **`main` moved under you?** The branch has to be up to date before merging;
+  the *Update branch* button on the PR does it, and either of us can press it.
+- With *Allow edits by maintainers* checked, small fixups (a doc line, a test
+  name) can be pushed onto your branch instead of going back and forth.
+- Draft PRs are welcome when you want feedback early.
 
-1. the parser in `bin/tidy_imports.dart` — negatable if it mirrors a config key;
-2. the `_help` text in `lib/args.dart`;
-3. `TidyConfig` in `lib/config.dart`, **and** its key in `_knownKeys`, or a
-   valid config starts warning (the test
-   `every option the reader supports passes without a word` catches it);
-4. the table in [`docs/configuration.md`](docs/configuration.md);
-5. the options table in the README.
+## Changing the code
 
-## Documentation
+Before changing `lib/` or `bin/`, read [`docs/architecture.md`](docs/architecture.md):
+it explains how the pieces fit, and most of it is an invariant a past bug taught.
 
-The README is the package's landing page on pub.dev: a tour that links out. The
-reference lives in [`docs/`](docs/README.md), read on GitHub and left out of the
-package. Links from the README into `docs/`, and its images, are absolute GitHub
-URLs, since the same file renders on pub.dev.
-
-## Commit Message Format
-
-This project uses **Conventional Commits**: they keep the history readable and
-make the next version bump obvious at a glance.
-
-| Prefix | When to use | Version effect |
-|---|---|---|
-| `feat: ...` | New feature | minor bump |
-| `fix: ...` | Bug fix | patch bump |
-| `feat!: ...` | Breaking change | major bump |
-| `docs: ...` | Documentation only | no bump |
-| `test: ...` | Adding/fixing tests | no bump |
-| `refactor: ...` | Refactor without behavior change | no bump |
-| `chore: ...` | Maintenance, CI, tooling | no bump |
-
-Examples:
-
-```
-feat: add --dry-run flag to preview changes without writing
-fix: handle files with only a BOM character correctly
-docs: add example of Flutter pre-commit hook setup
-feat!: rename --no-comments to --skip-comments
-```
-
-For breaking changes you can also use the `BREAKING CHANGE:` footer:
-
-```
-feat: change default sort order
-
-BREAKING CHANGE: relative imports now appear before package imports
-```
-
-## Release Process
-
-Releases are cut by hand. One commit moves the version everywhere it is
-written, and CI refuses the push if any of them lags behind:
-
-1. Pick the version from the commits since the last tag — `feat:` means a minor
-   bump, `fix:` a patch, `feat!:` a major.
-2. In a single commit, set:
-   - `version:` in `pubspec.yaml`
-   - `packageVersion` in `lib/src/version.dart`
-   - a new section at the **top** of `CHANGELOG.md`, newest first
-   - the two lines the README hands people to copy: `tidy_imports: ^x.y.z`
-     and the pre-commit `rev: 'vx.y.z'`
-3. Check it locally before pushing — this is the same gate CI runs:
-
-```sh
-dart run tool/check_version_sync.dart
-```
-
-4. Push the commit, then the tag:
-
-```sh
-git tag v1.5.1
-git push origin main v1.5.1
-```
-
-5. Publish to pub.dev, from a clean checkout of the tag:
-
-```sh
-dart pub publish
-```
-
-   This step is deliberately manual. Publishing from GitHub Actions needs
-   automated publishing enabled on the package's pub.dev admin page; without
-   it the workflow fails at the upload with `publishing from github is not
-   enabled`, which is a broken release pipeline pretending to be a working
-   one. A person running one command is clearer.
-
-## Generating Build Metadata
-
-```sh
-dart run tool/gen_version.dart
-```
-
-This writes `lib/src/build_info.dart` (gitignored) with the current version,
-git describe output, commit hash, and build timestamp.
-
-**The CLI does not read this file.** `--version` prints `packageVersion` from
-`lib/src/version.dart`. The generated file is a build artifact for local
-inspection and packaging scripts; wiring it into `--version` would need a
-checked-in stub, since the real file is gitignored and consumers' builds would
-fail without it.
-
-## Project Structure
+### Where things live
 
 ```
 bin/
@@ -168,14 +97,7 @@ lib/
   src/
     version.dart          # Version constant (bumped by hand, checked by CI)
     build_info.dart       # Git metadata (gitignored, generated by tool/)
-test/
-  sort_test.dart          # Core grouping and ordering
-  directives_test.dart    # Directive shapes, comments, strings, exports
-  features_test.dart      # Custom tiers, pubspec sort, config tests
-  graph_test.dart         # Import graph and its exports
-  dependencies_test.dart  # Dependency audit
-  doctor_test.dart        # --doctor and --apply
-  cli_test.dart           # End-to-end: spawns the real binary on a temp project
+test/                     # See "Tests" below
 tool/
   check_version_sync.dart # CI: every place a version is written agrees
   check_coverage.dart     # CI: line coverage of lib/ stays above the floor
@@ -184,28 +106,67 @@ docs/
   architecture.md         # How it fits together, and why — read before changing lib/
 ```
 
-## Community
+### Tests
 
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security Policy](SECURITY.md)
+Where a test goes depends on what you touched:
 
-## Opening a Pull Request
+- `test/sort_test.dart` — core grouping and ordering
+- `test/directives_test.dart` — directive shapes, comments, strings, exports
+- `test/features_test.dart` — custom tiers, config loading, pubspec sorting
+- `test/graph_test.dart` — the import graph and its exports
+- `test/dependencies_test.dart` — the dependency audit
+- `test/doctor_test.dart` — `--doctor` and `--apply`
+- `test/cli_test.dart` — anything only the binary does: writing files, exit
+  codes, flags, config discovery. It spawns the real binary on a temp project.
+
+### Adding an option
+
+An option lives in five places, and a missing one is a bug a user meets:
+
+1. the parser in `bin/tidy_imports.dart` — negatable if it mirrors a config key;
+2. the `_help` text in `lib/args.dart`;
+3. `TidyConfig` in `lib/config.dart`, **and** its key in `_knownKeys`, or a
+   valid config starts warning (the test
+   `every option the reader supports passes without a word` catches it);
+4. the table in [`docs/configuration.md`](docs/configuration.md);
+5. the options table in the README.
+
+### Documentation
+
+The README is the package's landing page on pub.dev: a tour that links out. The
+reference lives in [`docs/`](docs/README.md), read on GitHub and left out of the
+package. Links from the README into `docs/`, and its images, are absolute GitHub
+URLs, since the same file renders on pub.dev.
+
+### Commit messages
+
+This project uses **Conventional Commits**: they keep the history readable and
+make the next version bump obvious at a glance. Don't let it block you; a
+title can be fixed before merge.
+
+| Prefix | When to use | Version effect |
+|---|---|---|
+| `feat: ...` | New feature | minor bump |
+| `fix: ...` | Bug fix | patch bump |
+| `feat!: ...` | Breaking change | major bump |
+| `docs: ...` | Documentation only | no bump |
+| `test: ...` | Adding/fixing tests | no bump |
+| `refactor: ...` | Refactor without behavior change | no bump |
+| `chore: ...` | Maintenance, CI, tooling | no bump |
+
+```
+feat: add --dry-run flag to preview changes without writing
+fix: handle files with only a BOM character correctly
+docs: add example of Flutter pre-commit hook setup
+feat!: rename --no-comments to --skip-comments
+```
+
+For a breaking change you can also use the `BREAKING CHANGE:` footer.
+
+### What CI checks
 
 `main` is protected: every change arrives through a PR, and a PR cannot be
 merged until CI is green.
-
-1. Fork the repository and create a branch from `main`.
-2. Make your changes, following the style of the files around them.
-3. Add or update tests. Where they go depends on what you touched:
-   - `test/sort_test.dart` — core grouping and ordering
-   - `test/directives_test.dart` — directive shapes, comments, strings, exports
-   - `test/features_test.dart` — custom tiers, config loading, pubspec sorting
-   - `test/cli_test.dart` — anything only the binary does: writing files, exit
-     codes, flags, config discovery
-4. Open a PR with a Conventional Commit title and a description of what changed
-   and why.
-
-### What has to pass
 
 | Check | What it runs |
 |---|---|
@@ -228,8 +189,62 @@ Actions in `.github/workflows/` are pinned to a full commit SHA with the version
 as a trailing comment (`uses: owner/action@<sha> # vX.Y.Z`); Dependabot keeps
 both up to date. A tag can be moved to point at other code; a SHA cannot.
 
-Your branch also has to be up to date with `main` before merging. The branch is
-deleted automatically once the PR lands.
+## For maintainers
+
+### Release process
+
+Releases are cut by hand. One commit moves the version everywhere it is
+written, and CI refuses the push if any of them lags behind:
+
+1. Pick the version from the commits since the last tag — `feat:` means a minor
+   bump, `fix:` a patch, `feat!:` a major.
+2. In a single commit, set:
+   - `version:` in `pubspec.yaml`
+   - `packageVersion` in `lib/src/version.dart`
+   - a new section at the **top** of `CHANGELOG.md`, newest first, crediting
+     outside contributors
+   - the two lines the README hands people to copy: `tidy_imports: ^x.y.z`
+     and the pre-commit `rev: 'vx.y.z'`
+3. Check it locally before pushing — this is the same gate CI runs:
+
+```sh
+dart run tool/check_version_sync.dart
+dart pub publish --dry-run
+```
+
+4. Push the commit, then the tag:
+
+```sh
+git tag v1.5.1
+git push origin main v1.5.1
+```
+
+5. Publish to pub.dev, from a clean checkout of the tag:
+
+```sh
+dart pub publish
+```
+
+   This step is deliberately manual. Publishing from GitHub Actions needs
+   automated publishing enabled on the package's pub.dev admin page; without
+   it the workflow fails at the upload with `publishing from github is not
+   enabled`, which is a broken release pipeline pretending to be a working
+   one. A person running one command is clearer.
+
+### Generating build metadata
+
+```sh
+dart run tool/gen_version.dart
+```
+
+This writes `lib/src/build_info.dart` (gitignored) with the current version,
+git describe output, commit hash, and build timestamp.
+
+**The CLI does not read this file.** `--version` prints `packageVersion` from
+`lib/src/version.dart`. The generated file is a build artifact for local
+inspection and packaging scripts; wiring it into `--version` would need a
+checked-in stub, since the real file is gitignored and consumers' builds would
+fail without it.
 
 ### Dependency updates
 

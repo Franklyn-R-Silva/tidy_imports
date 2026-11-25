@@ -7,21 +7,17 @@ body:
     id: problem
     attributes:
       label: Problem / motivation
-      description: What are you trying to do that tidy_imports doesn't support?
+      description: What are you trying to do that tidy_imports doesn't support? A problem without a solution is a fine request.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed solution
-      description: How should it work? A flag, a config option, new behavior?
-    validations:
-      required: true
+      description: Optional. A flag, a config key, a new default? Say if you'd like to send the PR yourself.
   - type: textarea
     id: example
     attributes:
       label: Example
-      description: Show the before/after or the config you'd expect.
+      description: Optional. The before/after, or the config you'd expect.
       render: yaml
-    validations:
-      required: false
