@@ -1,0 +1,56 @@
+# OpenSSF Scorecard grades how the repository is run (branch rules, token
+# permissions, pinned actions, dangerous workflow patterns, maintenance) and
+# files every gap as an alert under Security > Code scanning. It is what keeps
+# the hardening in these workflows from quietly regressing.
+#
+# Scorecard's API only accepts published results from workflows that follow
+# its rules: no workflow-level write permissions, env or defaults, and only
+# approved actions in the job below. Keep it that way, or publishing fails.
+# https://github.com/ossf/scorecard-action#workflow-restrictions
+name: scorecard
+
+on:
+  # Re-scores the Branch-Protection check when the ruleset changes.
+  branch_protection_rule:
+  # Keeps the Maintained check current between pushes.
+  schedule:
+    - cron: '23 6 * * 1'
+  push:
+    branches: [main]
+
+permissions: {}
+
+# Blocks all cache access: nothing here needs a cache, and none can be poisoned.
+cache-mode: none
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: scorecard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Scorecard only supports the default branch.
+    if: github.event.repository.default_branch == github.ref_name
+    permissions:
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # sign the results published to api.scorecard.dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@23f22cd43608bae7a1f1fa2603d7314dee9538a5 # v2.6.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+          # A rejected publish is otherwise only a warning nobody reads.
+          fail_on_publish_error: true
+
+      - if: always()
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: results.sarif

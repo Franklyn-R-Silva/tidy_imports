@@ -214,11 +214,26 @@ merged until CI is green.
 | `test (beta)` | the suite on the next SDK |
 | `min SDK (3.0.0)` | that the package still resolves and runs on the oldest SDK `pubspec.yaml` claims |
 
+Those four are required by the branch ruleset. These also run on every PR and
+are expected green:
+
+| Check | What it runs |
+|---|---|
+| `test (stable) on windows` | the suite on Windows, where path-separator bugs show up |
+| `pana` | pub.dev's scorer; fails on any pub point below the maximum (160/160) |
+| `dependency review` | fails if the PR adds a pub package or action with a known vulnerability |
+| `CodeQL` | GitHub's code scanning of the workflows (injection, excess permissions); Dart itself is not a CodeQL language |
+
+Actions in `.github/workflows/` are pinned to a full commit SHA with the version
+as a trailing comment (`uses: owner/action@<sha> # vX.Y.Z`); Dependabot keeps
+both up to date. A tag can be moved to point at other code; a SHA cannot.
+
 Your branch also has to be up to date with `main` before merging. The branch is
 deleted automatically once the PR lands.
 
 ### Dependency updates
 
 Dependabot opens PRs monthly for GitHub Actions and for the pub dependencies,
-the latter grouped into a single PR. They go through the same checks as
-anything else.
+each ecosystem grouped into a single PR. Action updates wait seven days after a
+release, so a hijacked one is usually pulled before it reaches a PR. They go
+through the same checks as anything else.
