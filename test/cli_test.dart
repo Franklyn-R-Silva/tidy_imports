@@ -304,7 +304,11 @@ tidy_imports:
       ];
       final source = at('apps/mobile/lib/src/build/source.dart');
       expect(run().exitCode, 0);
-      expect(source.readAsStringSync(), sorted);
+      // The file belongs to `mobile`, so `package:demo/` is another package.
+      expect(
+        source.readAsStringSync(),
+        sorted.replaceFirst('// Project imports:', '// Package imports:'),
+      );
       for (final file in excluded) {
         expect(file.readAsStringSync(), unsorted, reason: file.path);
       }
