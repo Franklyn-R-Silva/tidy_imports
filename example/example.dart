@@ -2,14 +2,24 @@
 //
 // From the command line, in any Dart or Flutter project:
 //
-//   dart run tidy_imports                # sort the project
-//   dart run tidy_imports --dry-run      # preview, write nothing
-//   dart run tidy_imports --report       # the import graph: cycles, dead files
-//   dart run tidy_imports --help         # every option, with its default
+//   dart pub add dev:tidy_imports              # once, as a dev dependency
+//   dart run tidy_imports                      # sort the project
+//   dart run tidy_imports --dry-run            # preview, write nothing
+//   dart run tidy_imports --exit-if-changed    # CI: exit 1 if unsorted
+//   dart run tidy_imports --doctor             # which options your lints want
+//   dart run tidy_imports --report             # cycles, dead files, coupling
+//   dart run tidy_imports --help               # every option, with its default
 //
 // Each option below is also a key in `tidy_imports.yaml` (or in the
 // `tidy_imports:` block of pubspec.yaml), and each flag is negatable —
-// `--no-emojis` overrides `emojis: true` for a single run.
+// `--no-emojis` overrides `emojis: true` for a single run:
+//
+//   # pubspec.yaml
+//   tidy_imports:
+//     flat: true              # the order `directives_ordering` wants
+//     sort_exports: true
+//     ignored_files:
+//       - \.g\.dart$          # regexes on the path: skip generated code
 //
 // This file tours the library API the CLI is built on. Every function here is
 // pure: it takes values and returns values, reads no file, writes no file and

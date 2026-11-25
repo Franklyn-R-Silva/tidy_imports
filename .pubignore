@@ -15,6 +15,9 @@ release-please-config.json
 # The reference lives on GitHub, where the README links to it and Mermaid
 # renders. screenshots/ must stay in: pub.dev reads the images from the package.
 docs/
+# An index of those GitHub pages for AI assistants; the package already ships
+# the README, which links to the same pages.
+llms.txt
 
 # --- Mirror of the root .gitignore (see the note above) ---
 # Dart

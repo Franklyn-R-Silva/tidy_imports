@@ -1,0 +1,38 @@
+# tidy_imports
+
+> A Dart CLI, installed as a dev dependency, that sorts and groups the import directives of a Dart or Flutter project: Dart, Flutter, package and project imports, each under a label. Its default output is the same as import_sorter's, whose spiritual successor it is. It writes the blank line `dart format` 3.13+ writes, has an option for each import lint (`directives_ordering`, `prefer_relative_imports`, `always_use_package_imports`), fails CI on unsorted files, and can report import cycles, dead files and coupling. Dart SDK 3.0 or later.
+
+Install with `dart pub add dev:tidy_imports` (or `flutter pub add dev:tidy_imports`) and run `dart run tidy_imports` from the folder that holds `pubspec.yaml`. Useful commands:
+
+- `dart run tidy_imports --dry-run`: show what would change, write nothing
+- `dart run tidy_imports --exit-if-changed`: CI check; names every unsorted file and exits 1
+- `dart run tidy_imports --flat --sort-exports`: the order the `directives_ordering` lint wants
+- `dart run tidy_imports --doctor` (`--apply`): check the configuration against `analysis_options.yaml` (and write the fixes)
+- `dart run tidy_imports --report`: import cycles, dead files, unused or dev-only dependencies, coupling; `--format=mermaid|dot|json`
+
+Every option is also a key in a `tidy_imports:` block of `pubspec.yaml` or in a standalone `tidy_imports.yaml`. Deleting anything (duplicate or unused imports) and sorting `pubspec.yaml` are opt-in.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/README.md): The tour: install, before and after, lints, import graph, CI, FAQ
+- [Getting started](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/getting-started.md): Installing, running, choosing files, directories scanned, monorepos, defaults
+- [Configuration](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/configuration.md): Every flag and config key, the standalone file, config diagnostics
+- [Agreeing with your lints](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/lint-agreement.md): `--doctor`, `--flat`, `--relative-imports`, `--package-imports`, `dart format` 3.13+
+- [CI](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/ci.md): GitHub Actions, exit codes, pre-commit hooks
+- [Coming from import_sorter](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/migrating-from-import_sorter.md): How to switch, and what changed
+- [Shaping the output](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/output-shape.md): Groups, custom tiers, exports, folder grouping, test doubles
+- [Cleaning up](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/cleanup.md): Duplicate imports, unused imports, sorting `pubspec.yaml`
+- [The import graph](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/import-graph.md): `--report` findings and the Mermaid, DOT and JSON output
+- [Tricky imports](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/tricky-imports.md): Multi-line, conditional and commented directives
+
+## Package
+
+- [pub.dev](https://pub.dev/packages/tidy_imports): Versions, install instructions, score
+- [Example](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/example/example.dart): Every option run through the library API, in one program
+
+## Optional
+
+- [Using it as a library](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/library-api.md): The pure functions behind the CLI
+- [API reference](https://pub.dev/documentation/tidy_imports/latest/): Generated dartdoc
+- [Changelog](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/CHANGELOG.md): Every release
+- [Architecture](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/docs/architecture.md): For contributors: code layout and invariants
