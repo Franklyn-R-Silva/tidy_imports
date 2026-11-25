@@ -31,6 +31,7 @@ sorting, and monorepo support.
   <a href="#agree-with-your-lints">Lints</a> ·
   <a href="#see-your-architecture">Import graph</a> ·
   <a href="#ci">CI</a> ·
+  <a href="#faq">FAQ</a> ·
   <a href="https://github.com/Franklyn-R-Silva/tidy_imports/tree/main/docs">Documentation</a> ·
   <a href="https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/CHANGELOG.md">Changelog</a>
 </p>
@@ -111,6 +112,11 @@ import 'widgets/user_card.dart';
 Only the directives move. Nothing below them is touched, and nothing is deleted
 unless you ask.
 
+Then `dart run tidy_imports --doctor` checks the setup against
+[your lints](#agree-with-your-lints) (`--apply` writes what it suggests), and
+`dart run tidy_imports --exit-if-changed` in [CI or pre-commit](#ci) keeps the
+imports sorted.
+
 ## Why tidy_imports?
 
 Nothing in Dart decides what order the imports go in, so they end up in the
@@ -127,6 +133,19 @@ It fills the one gap the Dart toolchain leaves:
 | Lints | *Report* `directives_ordering`, `prefer_relative_imports`, `always_use_package_imports` | *Fix* them — and `--doctor` says which ones you have on |
 | `dart fix` | Removes an unused import | Runs it under `--remove-unused`, then tidies the gap in the same pass |
 | — | Nothing groups, labels, or looks at the graph | Group labels, custom tiers, cycles, dead files, coupling, a dependency audit |
+
+### When something else is enough
+
+| You want | Enough on its own | `tidy_imports` adds |
+|---|---|---|
+| The `directives_ordering` order, once | `dart fix --apply --code=directives_ordering` | Labelled groups with Flutter and your own package set apart — or, under `--flat`, the lint's order plus a check that fails CI (`dart fix --dry-run` exits `0` either way) |
+| The file in front of you tidied | Your editor's *Organize Imports*: the lint's order, unused imports dropped | The whole project in one command, with the same result in CI and pre-commit |
+| import_sorter's output | import_sorter, last released as 4.6.0 in May 2021 | The same default output, still maintained, plus what the [migration guide](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/migrating-from-import_sorter.md#what-changed) lists |
+
+If the lint's order is all you want and your editor already organizes on save,
+you may not need another tool. `tidy_imports` earns its place when one order has
+to hold across a team and its CI, when you want the grouped, labelled layout, or
+when you want to know what the import graph says.
 
 ## Usage
 
@@ -331,6 +350,69 @@ repos:
 The default output is the same — same groups, same labels, same order — so
 switching is a dependency swap and a renamed config block.
 → [What changed, and how to switch](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/migrating-from-import_sorter.md)
+
+## FAQ
+
+### How do I sort imports in a Dart or Flutter project?
+
+`dart pub add dev:tidy_imports`, then `dart run tidy_imports` from the folder
+that holds `pubspec.yaml`. Every Dart file in `lib/`, `test/`, `bin/` and the
+other [standard folders](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/getting-started.md#directories-scanned)
+is sorted in place; `--dry-run` shows what would change first.
+
+### What replaces import_sorter?
+
+`tidy_imports` writes the same default output, so switching is a dependency swap
+and renaming the `import_sorter:` config block to `tidy_imports:` —
+[how to switch](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/migrating-from-import_sorter.md).
+
+### How do I fix `directives_ordering` warnings?
+
+"Sort directive sections alphabetically", "Place 'dart:' imports before other
+imports", "Specify exports in a separate section after all imports": the lint
+wants one alphabetical run per section, which the grouped layout breaks. Run
+with `--flat --sort-exports`, or let `dart run tidy_imports --doctor --apply`
+write `flat: true` and `sort_exports: true` into your config.
+
+### Why do `dart format` and my import sorter keep undoing each other?
+
+Since Dart 3.13 the formatter puts a blank line between `package:` and relative
+imports. `tidy_imports` writes that line too, by default, so the two agree —
+[details](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/lint-agreement.md#dart-format-313).
+
+### How do I fail CI or a commit when imports are unsorted?
+
+`dart run tidy_imports --exit-if-changed` writes nothing, names every unsorted
+file and exits `1`. For pre-commit, use the `dart-import-sorter` or
+`flutter-import-sorter` hook shown under [CI](#ci).
+
+### How do I skip generated files like `*.g.dart`?
+
+List them as regular expressions under `ignored_files`:
+
+```yaml
+tidy_imports:
+  ignored_files:
+    - \.g\.dart$
+    - \.freezed\.dart$
+```
+
+### Does it remove unused imports?
+
+Only when asked: `--remove-unused` runs `dart fix --apply --code=unused_import`
+first, then sorts. By default nothing is deleted.
+
+### Relative imports or `package:` imports?
+
+Whichever your lints ask for: `--relative-imports` for
+`prefer_relative_imports`, `--package-imports` for `always_use_package_imports`.
+Both rewrite only your own package's imports, and only under `lib/`.
+
+### Does it work in a monorepo or a pub workspace?
+
+Packages under `packages/` are scanned on their own, a missing `pubspec.lock` is
+fine, and `include_files` adds folders kept anywhere else —
+[details](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/getting-started.md#monorepos-and-pub-workspaces).
 
 ## Contributing
 
