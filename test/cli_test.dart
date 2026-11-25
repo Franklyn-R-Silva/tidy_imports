@@ -304,7 +304,11 @@ tidy_imports:
       ];
       final source = at('apps/mobile/lib/src/build/source.dart');
       expect(run().exitCode, 0);
-      expect(source.readAsStringSync(), sorted);
+      // The file belongs to `mobile`, so `package:demo/` is another package.
+      expect(
+        source.readAsStringSync(),
+        sorted.replaceFirst('// Project imports:', '// Package imports:'),
+      );
       for (final file in excluded) {
         expect(file.readAsStringSync(), unsorted, reason: file.path);
       }
@@ -1459,6 +1463,75 @@ dependencies:
     expect(result.exitCode, 1);
     expect(result.stderr, contains('invalid file pattern'));
     expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+  });
+
+  test('a directory that cannot be listed is one error line', () {
+    libFile('main.dart').writeAsStringSync(unsorted);
+    final locked = Directory('${temp.path}/test/locked')
+      ..createSync(recursive: true);
+    Process.runSync('chmod', ['000', locked.path]);
+    addTearDown(() => Process.runSync('chmod', ['755', locked.path]));
+
+    for (final args in [
+      <String>[],
+      ['--report']
+    ]) {
+      final result = run(args);
+
+      expect(result.exitCode, 1, reason: '$args');
+      expect(result.stderr, contains('could not list /test/locked'));
+      expect(result.stderr, isNot(contains('#0 ')), reason: 'no stack trace');
+    }
+  },
+      // Windows has no chmod, and root lists a 000 directory anyway.
+      skip: Platform.isWindows ||
+          Process.runSync('id', ['-u']).stdout.toString().trim() == '0');
+
+  test('a sub-package under packages/ is sorted as its own package', () {
+    File('${temp.path}/packages/core/pubspec.yaml')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('name: core\n');
+    final file = File('${temp.path}/packages/core/lib/a.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync("import 'package:core/b.dart';\n"
+          "import 'package:http/http.dart';\n"
+          "import 'dart:io';\n");
+    const expected = '''
+// Dart imports:
+import 'dart:io';
+
+// Package imports:
+import 'package:http/http.dart';
+
+// Project imports:
+import 'package:core/b.dart';
+''';
+
+    expect(run().exitCode, 0);
+    expect(file.readAsStringSync(), expected);
+
+    // Run inside the sub-package, the way melos runs it: the same answer, so
+    // the two runs never undo each other.
+    final inside = Process.runSync(
+      Platform.resolvedExecutable,
+      ['run', cli, '--exit-if-changed'],
+      workingDirectory: '${temp.path}/packages/core',
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+    expect(inside.exitCode, 0, reason: '${inside.stdout}${inside.stderr}');
+  });
+
+  test('--relative-imports rewrites inside a sub-package lib/', () {
+    File('${temp.path}/packages/core/pubspec.yaml')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('name: core\n');
+    final file = File('${temp.path}/packages/core/lib/src/a.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync("import 'package:core/src/b.dart';\n");
+
+    expect(run(['--relative-imports']).exitCode, 0);
+    expect(file.readAsStringSync(), contains("import 'b.dart';"));
   });
 
   test('a file that cannot be written is one error line, and the run goes on',
