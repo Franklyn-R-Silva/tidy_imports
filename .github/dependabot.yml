@@ -1,16 +1,25 @@
 version: 2
 
 updates:
-  # The actions pinned in test.yml age silently otherwise;
-  # nothing in a green build tells you checkout@v4 has been superseded.
+  # The workflows pin every action to a commit SHA, and a SHA ages silently;
+  # nothing in a green build tells you it has been superseded. Dependabot
+  # bumps the SHA and its `# vX.Y.Z` comment together, one grouped PR a month.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    # A hijacked action release is usually caught and pulled within days;
+    # waiting a week keeps it out of the PR. Security updates skip the wait.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "ci"
     labels:
       - dependencies
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Runtime deps are args, tint and yaml; the rest are dev-only. Grouped into
   # one PR a month so a three-package bump is one review, not three.
