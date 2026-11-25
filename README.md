@@ -346,6 +346,8 @@ repos:
 | [CI](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/ci.md) | GitHub Actions, exit codes, pre-commit |
 | [Using it as a library](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/library-api.md) | The pure functions behind the CLI |
 
+**With an AI assistant:** these docs are indexed on [Context7](https://context7.com/franklyn-r-silva/tidy_imports) as `/franklyn-r-silva/tidy_imports`, so an agent with the Context7 MCP (Claude Code, Cursor, VS Code) answers from the current docs instead of guessing flags. Without it, point the agent at [`llms.txt`](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/llms.txt).
+
 ## Coming from import_sorter
 
 The default output is the same — same groups, same labels, same order — so

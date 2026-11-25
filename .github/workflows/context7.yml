@@ -1,0 +1,29 @@
+# Context7 re-indexes a library on its own only as often as its popularity
+# earns, so a new release's docs could lag behind for agents. This asks
+# for a refresh as soon as a GitHub release is published.
+# Needs the CONTEXT7_API_KEY secret (context7.com dashboard > Settings).
+# https://context7.com/docs/integrations/github-actions
+name: context7
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+# Blocks all cache access: nothing here needs a cache, and none can be poisoned.
+cache-mode: none
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ask Context7 to re-index the docs
+        env:
+          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
+        run: |
+          curl -fsS -X POST https://context7.com/api/v1/refresh \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CONTEXT7_API_KEY" \
+            -d '{"libraryName": "/franklyn-r-silva/tidy_imports"}'
