@@ -1,45 +1,34 @@
 name: 🐛 Bug report
-description: Report a problem with tidy_imports
+description: tidy_imports did something wrong, crashed, or fought another tool
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file a bug report! Please fill in the
-        details below so we can reproduce and fix it quickly.
+        Thanks for reporting! Only the first box is required — a short report
+        is better than none, and follow-up questions are fine.
+        Not sure it is a bug? Ask in [Discussions](https://github.com/Franklyn-R-Silva/tidy_imports/discussions/categories/q-a).
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
-      description: A clear description of the bug and what you expected instead.
-      placeholder: Running `dart run tidy_imports` on this file produced ...
+      description: The command you ran, what it did, and what you expected instead.
+      placeholder: Running `dart run tidy_imports` on the file below produced ...
     validations:
       required: true
   - type: textarea
     id: sample
     attributes:
       label: Minimal sample
-      description: The smallest Dart file (or pubspec snippet) that reproduces it.
+      description: The smallest Dart file (or config / pubspec snippet) that shows it. This is what makes a fix fast.
       render: dart
-    validations:
-      required: false
   - type: input
-    id: version
+    id: versions
     attributes:
-      label: tidy_imports version
-      description: Output of `dart run tidy_imports --version`.
-      placeholder: "tidy_imports x.y.z"
-    validations:
-      required: true
-  - type: input
-    id: dart-version
-    attributes:
-      label: Dart / Flutter SDK version
-      description: Output of `dart --version` (or `flutter --version`).
-      placeholder: "Dart SDK version: 3.5.0"
-    validations:
-      required: true
+      label: Versions
+      description: "`dart run tidy_imports --version` and `dart --version`, if you have them handy."
+      placeholder: "tidy_imports 2.7.0, Dart 3.13.5"
   - type: dropdown
     id: os
     attributes:
@@ -49,5 +38,3 @@ body:
         - macOS
         - Linux
         - Other
-    validations:
-      required: true

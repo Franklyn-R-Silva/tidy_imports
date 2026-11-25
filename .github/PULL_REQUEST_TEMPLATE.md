@@ -1,22 +1,18 @@
 <!--
-  Thanks for contributing to tidy_imports!
-  Please use a Conventional Commit title (e.g. "feat: add X", "fix: handle Y")
-  so the history stays readable and the next version bump is obvious.
+  Thanks for contributing! A Conventional Commit title ("fix: ...", "feat: ...",
+  "docs: ...") helps; if you get it wrong it can be fixed before merge.
+  Draft PRs are welcome when you want early feedback.
 -->
 
-## What does this PR do?
+## What and why
 
-<!-- A short description of the change and the motivation. -->
+<!-- What changes, and the problem it solves. -->
 
-## Related issue
+Closes #
 
-<!-- e.g. Closes #12 -->
+## How I checked it
 
-## Checklist
-
-- [ ] Commit/PR title follows [Conventional Commits](https://www.conventionalcommits.org/)
-- [ ] `dart analyze` passes with no issues
-- [ ] `dart format .` applied
-- [ ] `dart test` passes
-- [ ] Added or updated tests for the change
-- [ ] Updated documentation (README / `docs/` / CONTRIBUTING) if behavior changed
+<!-- A test you added, a command you ran, or "only CI". CI runs format,
+     analyze and the full suite on every PR, so you don't have to tick boxes.
+     If a check goes red and you're not sure why, say so — help is part of
+     the review. -->
