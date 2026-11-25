@@ -85,6 +85,11 @@ tidy_imports:
     - /apps/          # apps/mobile/, apps/web/, ...
 ```
 
+Each file is sorted as the package of the nearest `pubspec.yaml` above it: in
+`packages/core/`, `package:core/…` imports are Project imports, and
+`--relative-imports` / `--package-imports` rewrite them inside that package's
+`lib/`.
+
 Packages inside a pub workspace have no `pubspec.lock` of their own. When none
 is found the run continues normally; the only thing lost is skipping the
 Flutter plugin registrant, which a workspace member rarely has.
