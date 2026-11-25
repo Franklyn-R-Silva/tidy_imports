@@ -267,8 +267,6 @@ ImportSortData sortImports(
       // Only once the block has started: a comment above the *first* directive
       // is the file's own header — a licence, a `// Dart imports:` of ours —
       // and belongs at the top, where it was.
-      // A comment above the *first* directive is the file's own header — a
-      // licence, a `// Dart imports:` of ours — so it is never attached.
       //
       // Once our own header has been stripped the block has begun, though.
       // Reading only "no directive yet" took the note a previous run wrote

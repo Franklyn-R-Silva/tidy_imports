@@ -1,10 +1,3 @@
-/// Sections of a pubspec whose entries are sorted alphabetically.
-const _sortableSections = {
-  'dependencies',
-  'dev_dependencies',
-  'dependency_overrides',
-};
-
 /// Alphabetically sorts the dependency sections of a `pubspec.yaml`.
 ///
 /// Sorts `dependencies`, `dev_dependencies`, and `dependency_overrides` by key
@@ -125,13 +118,16 @@ int? _nestedResumesAt(List<String> lines, int index) {
 }
 
 /// Returns the section name if [line] is a sortable top-level section header.
-String? _sectionHeader(String line) {
-  final trimmed = line.trimRight();
-  for (final section in _sortableSections) {
-    if (trimmed == '$section:') return section;
-  }
-  return null;
-}
+///
+/// A comment may follow the colon: `dependencies: # runtime` used to read as no
+/// header at all, so the section was skipped without a word and
+/// `--exit-if-changed` passed on a pubspec the sort never looked at.
+String? _sectionHeader(String line) => _header.firstMatch(line)?.group(1);
+
+/// A top-level dependency section header, its name in group 1.
+final _header = RegExp(
+  r'^(dependencies|dev_dependencies|dependency_overrides):\s*(?:#.*)?$',
+);
 
 /// Extracts the dependency key from a `  key:` entry line, or null if the line
 /// is not a top-level (2-space indented) mapping key.

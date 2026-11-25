@@ -294,6 +294,9 @@ void main(List<String> args) {
   } on FormatException catch (e) {
     stderr.writeln('Error: ${e.message}');
     exit(1);
+  } on FileSystemException catch (e) {
+    stderr.writeln(_unlistable(currentPath, e));
+    exit(1);
   }
 
   // Matched on the normalised relative path, the way ignored_files are: the
@@ -392,6 +395,7 @@ void main(List<String> args) {
   var duplicatesRemoved = 0;
   var failed = 0;
   final success = '✔'.green();
+  final packageNames = <String, String?>{};
 
   for (final filePath in dartFiles.keys) {
     final file = dartFiles[filePath];
@@ -420,9 +424,11 @@ void main(List<String> args) {
     // Checking is this loop's job: it runs over the whole project and fails
     // once at the end, so every unsorted file is reported instead of the run
     // aborting on the first one (issue import_sorter#87).
+    final owner =
+        _owningPackage(currentPath, filePath, packageName, packageNames);
     final result = sort.sortImports(
       const LineSplitter().convert(rawContent),
-      packageName,
+      owner.name,
       emojis,
       false,
       noComments,
@@ -439,7 +445,7 @@ void main(List<String> args) {
       relativeImports: relativeImports,
       packageImports: packageImports,
       attachComments: attachComments,
-      libRelativePath: _libRelativePath(currentPath, filePath),
+      libRelativePath: _libRelativePath(owner.root, filePath),
     );
     duplicatesRemoved += result.duplicatesRemoved;
     if (!result.updated) continue;
@@ -581,6 +587,14 @@ bool _samePubspec(String before, String after) {
   }
 }
 
+/// A directory the walk could not list, as the one line a user error gets. It
+/// used to be a `PathAccessException` under a stack trace — a folder owned by
+/// root inside `test/` was enough.
+String _unlistable(String currentPath, FileSystemException e) =>
+    'Error: could not list '
+    '${files.toPosix((e.path ?? '').replaceFirst(currentPath, ''))}: '
+    '${e.osError?.message ?? e.message}';
+
 /// Whether [file] opens with a UTF-8 byte order mark.
 bool _hasBom(File file) {
   RandomAccessFile? handle;
@@ -664,16 +678,53 @@ String _dartExecutable() {
   return (name == 'dart' || name == 'dart.exe') ? resolved : 'dart';
 }
 
-/// [filePath] written relative to `lib/`, with `/` separators — or null when
-/// the file does not live under `lib/`.
+/// The package [filePath] belongs to — the `name:` of the nearest
+/// `pubspec.yaml` above it, short of [projectPath], whose package is
+/// [rootName] — and the directory that pubspec sits in.
+///
+/// A monorepo's `packages/core/lib/a.dart` belongs to `core`. Sorted as the
+/// root package's file, its own `package:core/` imports went under the Package
+/// header, and running the tool inside `packages/core` — the way melos runs it
+/// — moved them back under Project: the two runs undid each other. [names]
+/// caches each directory's answer, null when it holds no named pubspec.
+({String name, String root}) _owningPackage(
+  String projectPath,
+  String filePath,
+  String rootName,
+  Map<String, String?> names,
+) {
+  var dir = File(filePath).parent.path;
+  while (dir.length > projectPath.length) {
+    final name = names.putIfAbsent(dir, () => _pubspecName(dir));
+    if (name != null) return (name: name, root: dir);
+    dir = Directory(dir).parent.path;
+  }
+  return (name: rootName, root: projectPath);
+}
+
+/// The `name:` of the pubspec in [dir], or null when there is none, it does
+/// not parse, or it names nothing.
+String? _pubspecName(String dir) {
+  final pubspec = File('$dir/pubspec.yaml');
+  if (!pubspec.existsSync()) return null;
+  try {
+    final name = (loadYaml(pubspec.readAsStringSync()) as YamlMap?)?['name'];
+    return name is String && name.isNotEmpty ? name : null;
+  } on Object {
+    return null;
+  }
+}
+
+/// [filePath] written relative to the `lib/` of the package in [packageRoot],
+/// with `/` separators — or null when the file does not live under it.
 ///
 /// Only a file inside `lib/` can be reached from another one by a relative
 /// URI. A test or a script importing the package has to say `package:`, so
 /// there is no relative form to rewrite to and the option simply does nothing
 /// there.
-String? _libRelativePath(String projectPath, String filePath) {
+String? _libRelativePath(String packageRoot, String filePath) {
   const lib = '/lib/';
-  final relative = files.toPosix(filePath.replaceFirst(projectPath, ''));
+  final relative = files.toPosix(filePath.replaceFirst(packageRoot, ''));
   return relative.startsWith(lib) ? relative.substring(lib.length) : null;
 }
 
@@ -706,12 +757,18 @@ int _report(
   required int featureDepth,
 }) {
   final text = format == 'text';
-  final scanned = files.dartFiles(
-    currentPath,
-    const [],
-    extraDirectories: files.reportDirectories,
-    includeFiles: includeFiles,
-  );
+  final Map<String, File> scanned;
+  try {
+    scanned = files.dartFiles(
+      currentPath,
+      const [],
+      extraDirectories: files.reportDirectories,
+      includeFiles: includeFiles,
+    );
+  } on FileSystemException catch (e) {
+    stderr.writeln(_unlistable(currentPath, e));
+    return 1;
+  }
 
   if (scanned.isEmpty) {
     final dirs = [...files.standardDirectories, ...files.reportDirectories];
@@ -1093,12 +1150,9 @@ Map<String, String> _subPackages(String currentPath) {
     final dir = files
         .toPosix(entity.parent.path.replaceFirst(currentPath, ''))
         .replaceFirst(RegExp('^/'), '');
-    try {
-      final name = (loadYaml(entity.readAsStringSync()) as YamlMap?)?['name'];
-      if (name is String) found[dir] = name;
-    } on Object {
-      // A pubspec that does not parse belongs to no package we can name.
-    }
+    // A pubspec that does not parse belongs to no package we can name.
+    final name = _pubspecName(entity.parent.path);
+    if (name != null) found[dir] = name;
   }
   return found;
 }

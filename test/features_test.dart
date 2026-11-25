@@ -507,6 +507,27 @@ dependencies:
         'name: demo\r\ndependencies:\r\n  a: ^1.0.0\r\n  b: ^1.0.0',
       );
     });
+
+    test('a comment after the section header does not hide the section', () {
+      const input = 'name: demo\n'
+          'dependencies: # runtime\n'
+          '  b: ^1.0.0\n'
+          '  a: ^1.0.0\n'
+          'dev_dependencies:   # tooling\n'
+          '  d: ^1.0.0\n'
+          '  c: ^1.0.0\n';
+
+      expect(
+        sortPubspec(input),
+        'name: demo\n'
+        'dependencies: # runtime\n'
+        '  a: ^1.0.0\n'
+        '  b: ^1.0.0\n'
+        'dev_dependencies:   # tooling\n'
+        '  c: ^1.0.0\n'
+        '  d: ^1.0.0\n',
+      );
+    });
   });
 
   group('test imports (fake_/mock_)', () {
