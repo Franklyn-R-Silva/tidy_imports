@@ -28,6 +28,7 @@ Every option is also a key in a `tidy_imports:` block of `pubspec.yaml` or in a 
 ## Package
 
 - [pub.dev](https://pub.dev/packages/tidy_imports): Versions, install instructions, score
+- [Context7](https://context7.com/franklyn-r-silva/tidy_imports): These docs indexed for agents, library ID `/franklyn-r-silva/tidy_imports`
 - [Example](https://raw.githubusercontent.com/Franklyn-R-Silva/tidy_imports/main/example/example.dart): Every option run through the library API, in one program
 
 ## Optional
