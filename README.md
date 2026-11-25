@@ -304,6 +304,7 @@ a warning naming the key — never silence — and `--strict-config` makes it fa
 | `--report` · `--format` · `--feature-depth` | Read the import graph · as text, Mermaid, DOT or JSON · feature size |
 | `--dry-run` · `--exit-if-changed` | Write nothing · fail when something would change |
 | `--ignore-config` · `--strict-config` | Skip the config · fail on a config problem |
+| `-h`, `--help` · `-v`, `--version` | Show the help · the version |
 
 → [Every flag and config key](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/configuration.md)
 
@@ -413,11 +414,17 @@ Both rewrite only your own package's imports, and only under `lib/`.
 Packages under `packages/` are scanned on their own, a missing `pubspec.lock` is
 fine, and `include_files` adds folders kept anywhere else —
 [details](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/getting-started.md#monorepos-and-pub-workspaces).
+Each file is sorted as the package of the nearest `pubspec.yaml` above it, so
+inside `packages/core/` a `package:core/…` import is a Project import.
 
 ## Contributing
 
 Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
 setup, the commit format and the release process.
+Start with a
+[`good first issue`](https://github.com/Franklyn-R-Silva/tidy_imports/labels/good%20first%20issue);
+questions go to
+[Discussions Q&A](https://github.com/Franklyn-R-Silva/tidy_imports/discussions/categories/q-a).
 [Code of Conduct](CODE_OF_CONDUCT.md) · [Security Policy](SECURITY.md) ·
 [Changelog](CHANGELOG.md)
 
