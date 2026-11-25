@@ -144,8 +144,11 @@ jobs:
       # dependency constraints still resolve and analyze, and platform support.
       # Unpinned on purpose: pub.dev always scores with the latest pana.
       # Threshold 0 = fail on any point below the maximum (160/160 today).
+      # pana converts the pubspec `screenshots:` to WebP; without these tools
+      # it scores the example/screenshots section 0/10.
       - name: Score the package as pub.dev will
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq webp
           dart pub global activate pana
           dart pub global run pana --exit-code-threshold 0
 
