@@ -2,6 +2,7 @@ name: ✨ Feature request
 description: Suggest an idea or improvement for tidy_imports
 title: "[Feature]: "
 labels: ["enhancement"]
+assignees: ["Franklyn-R-Silva"]
 body:
   - type: textarea
     id: problem
