@@ -2,6 +2,7 @@ name: 🐛 Bug report
 description: tidy_imports did something wrong, crashed, or fought another tool
 title: "[Bug]: "
 labels: ["bug"]
+assignees: ["Franklyn-R-Silva"]
 body:
   - type: markdown
     attributes:
