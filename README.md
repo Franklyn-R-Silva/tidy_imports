@@ -13,6 +13,7 @@
 [![likes](https://img.shields.io/pub/likes/tidy_imports)](https://pub.dev/packages/tidy_imports/score)
 [![Dart SDK](https://img.shields.io/badge/Dart-%3E%3D3.0.0-blue)](https://dart.dev)
 [![CI](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml/badge.svg)](https://github.com/Franklyn-R-Silva/tidy_imports/actions/workflows/test.yml)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/17138/badge)](https://www.bestpractices.dev/projects/17138)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Dart CLI tool that automatically organizes your import statements — sorted
