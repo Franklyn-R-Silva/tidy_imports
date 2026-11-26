@@ -1,3 +1,20 @@
+## 2.7.2 (2026-11-26)
+
+No code changes: this release brings the README and docs on `main` to pub.dev.
+
+### Docs
+
+* The README shows the OpenSSF Best Practices badge (passing level)
+* Security reports and conduct concerns go to franklyn.dev.mobile@gmail.com,
+  or to GitHub's private vulnerability reporting
+* The README and `llms.txt` point AI assistants at the up-to-date docs on
+  Context7
+
+### Maintenance
+
+* Releases are published to pub.dev by GitHub Actions when the version tag is
+  pushed, instead of by hand
+
 ## 2.7.1 (2026-11-25)
 
 Fixes, and a README that says when you need the tool — and when you don't.
