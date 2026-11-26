@@ -212,24 +212,23 @@ dart run tool/check_version_sync.dart
 dart pub publish --dry-run
 ```
 
-4. Push the commit, then the tag:
+4. Merge it, then push the tag:
 
 ```sh
 git tag v1.5.1
-git push origin main v1.5.1
+git push origin v1.5.1
 ```
 
-5. Publish to pub.dev, from a clean checkout of the tag:
-
-```sh
-dart pub publish
-```
-
-   This step is deliberately manual. Publishing from GitHub Actions needs
-   automated publishing enabled on the package's pub.dev admin page; without
-   it the workflow fails at the upload with `publishing from github is not
-   enabled`, which is a broken release pipeline pretending to be a working
-   one. A person running one command is clearer.
+5. The tag publishes. [`publish.yml`](.github/workflows/publish.yml) runs
+   dart-lang's official publish workflow: a dry run, then the upload with a
+   short-lived OIDC token. pub.dev only accepts it from this repository, for a
+   `v{{version}}` tag that matches `pubspec.yaml`, from the `pub.dev`
+   environment, which only `v*` tags can use. No secret is stored. Manual
+   publishing is off on the package's pub.dev admin page, so do not run
+   `dart pub publish` by hand.
+6. Create the GitHub Release for the tag with the CHANGELOG section
+   (`gh release create v1.5.1 --notes-file <section>`). Publishing it also
+   triggers the Context7 refresh.
 
 ### Generating build metadata
 

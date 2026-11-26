@@ -3,7 +3,7 @@ description: >-
   Organize Dart and Flutter imports: sorted, grouped, in step with dart format
   and the directives_ordering lint, and checked in CI. Spiritual successor to
   import_sorter.
-version: 2.7.1
+version: 2.7.2
 repository: https://github.com/Franklyn-R-Silva/tidy_imports
 homepage: https://github.com/Franklyn-R-Silva/tidy_imports
 issue_tracker: https://github.com/Franklyn-R-Silva/tidy_imports/issues

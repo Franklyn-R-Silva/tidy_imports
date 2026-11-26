@@ -1,0 +1,22 @@
+# Publishes to pub.dev when a version tag is pushed. pub.dev only accepts the
+# upload from this repository, for a v{{version}} tag matching pubspec.yaml,
+# from the `pub.dev` environment (Settings > Environments limits it to v*
+# tags). The OIDC token lives for the run, so no publish secret is stored.
+# https://dart.dev/tools/pub/automated-publishing
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    permissions:
+      id-token: write # the OIDC token pub.dev trades for a one-off credential
+    # dart-lang's own workflow: dry run, then upload. Pinned like every action.
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+    with:
+      environment: pub.dev
+      use-flutter: false
