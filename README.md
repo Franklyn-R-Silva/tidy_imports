@@ -71,7 +71,7 @@ your app imports:
 
 ```yaml
 dev_dependencies:
-  tidy_imports: ^2.7.2
+  tidy_imports: ^2.7.3
 ```
 
 ### Before
@@ -326,7 +326,7 @@ never a stack trace.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Franklyn-R-Silva/tidy_imports
-    rev: 'v2.7.2'
+    rev: 'v2.7.3'
     hooks:
       - id: dart-import-sorter      # or flutter-import-sorter
 ```
@@ -381,7 +381,7 @@ write `flat: true` and `sort_exports: true` into your config.
 ### Why do `dart format` and my import sorter keep undoing each other?
 
 Since Dart 3.13 the formatter puts a blank line between `package:` and relative
-imports. `tidy_imports` writes that line too, by default, so the two agree —
+imports, in packages at language 3.13 or later. `tidy_imports` writes that line too, by default, so the two agree —
 [details](https://github.com/Franklyn-R-Silva/tidy_imports/blob/main/docs/lint-agreement.md#dart-format-313).
 
 ### How do I fail CI or a commit when imports are unsorted?

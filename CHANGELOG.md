@@ -1,3 +1,26 @@
+## 2.7.3 (2026-11-27)
+
+Fixes only.
+
+### Bug Fixes
+
+* Under `--no-comments` or `--flat` there is no header above the import
+  block. If the import that sorts first had a comment (`attach_comments`) or an
+  annotation attached, the next run read it as the file's own header and moved
+  it above the block. So a sorted file changed again, and
+  `--exit-if-changed` failed right after `dart run tidy_imports`. These lines
+  are now written where the next run reads them: above the block, with a blank
+  line under them. An `// ignore:` directly above the import stays with it
+  (#41)
+* `--doctor` decided whether `dart format` writes a blank line between import
+  sections from the SDK it ran on. `dart format` decides it from the package's
+  language version, the lower bound of `environment: sdk:`. So on Dart 3.13+,
+  every package below language 3.13 got a "fight" that did not exist:
+  `--doctor --exit-if-changed` failed CI and `--apply` wrote keys nobody
+  needed. The doctor now reads `environment: sdk:` (#43)
+* `--doctor` showed an `analysis_options.yaml` found in a parent folder as a
+  path with its leading `/` cut off. It shows the full path now
+
 ## 2.7.2 (2026-11-26)
 
 No code changes: this release brings the README and docs on `main` to pub.dev.

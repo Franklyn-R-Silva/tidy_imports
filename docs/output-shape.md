@@ -198,6 +198,12 @@ Three comments are never attached, in either mode:
 | `// ignore_for_file:` | On top | It applies to the whole file |
 | `///` doc comments | Where they are | They document a declaration, never a directive |
 
+Under `--flat` or `--no-comments` no header sits above the block. So when the
+import that sorts first has a note or an annotation above it, those lines go
+on top of the block, with a blank line under them. That is how the next run
+reads them, so the file stays sorted. An `// ignore:` right above the import
+still stays with it.
+
 It is off by default because it moves comments already in your files, and a
 project that learned to write around the old behaviour should not have its diff
 rewritten by an upgrade.

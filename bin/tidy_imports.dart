@@ -205,6 +205,7 @@ void main(List<String> args) {
     exit(_doctor(
       currentPath,
       config,
+      pubspecYaml,
       apply: argResults['apply'] == true,
       readOnly: exitOnChange || argResults['dry-run'] == true,
       failOnFindings: exitOnChange,
@@ -1170,7 +1171,8 @@ Map<String, String> _subPackages(String currentPath) {
 /// says it.
 int _doctor(
   String currentPath,
-  TidyConfig config, {
+  TidyConfig config,
+  YamlMap pubspec, {
   required bool apply,
   required bool readOnly,
   required bool failOnFindings,
@@ -1192,17 +1194,24 @@ int _doctor(
           packageDir: (name) => packageDirs[name],
         );
 
+  // `dart format` styles a package by its language version, the lower bound
+  // of `environment: sdk:`, not by the SDK it runs on (#43).
+  final environment = pubspec['environment'];
+  final sdk = environment is YamlMap ? environment['sdk'] : null;
   final findings = diagnose(
     lints,
     config,
-    formatterSeparates: _formatterSeparates(Platform.version),
+    formatterSeparates: _formatterSeparates(sdk is String
+        ? sdk.replaceFirst(RegExp(r'^[\^>=\s]+'), '')
+        : Platform.version),
   );
 
+  // An analysis_options.yaml above the project is shown whole, not cut short.
   final shown = options == null
       ? 'analysis_options.yaml'
       : files
-          .toPosix(options.path.replaceFirst(currentPath, ''))
-          .replaceFirst(RegExp('^/'), '');
+          .toPosix(options.path)
+          .replaceFirst('${files.toPosix(currentPath)}/', '');
   stdout.writeln('┏━━ Checking the tidy_imports configuration against $shown');
 
   if (options == null) {
@@ -1368,8 +1377,9 @@ void _say(String text) {
   if (line.isNotEmpty) stdout.writeln('┃  ${first ? '' : '  '}$line');
 }
 
-/// Whether the `dart format` of the SDK [version] (`3.13.1 (stable) …`)
-/// writes a blank line between `package:` and relative imports on its own.
+/// Whether `dart format` at language [version] (`3.13.1 (stable) …`, or a
+/// constraint's lower bound) writes a blank line between `package:` and
+/// relative imports on its own.
 bool _formatterSeparates(String version) {
   final match = RegExp(r'^(\d+)\.(\d+)').firstMatch(version);
   if (match == null) return false;
