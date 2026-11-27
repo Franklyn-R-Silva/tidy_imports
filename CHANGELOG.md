@@ -1,3 +1,18 @@
+## 2.7.3 (2026-11-27)
+
+Fixes only.
+
+### Bug Fixes
+
+* Under `--no-comments` or `--flat` there is no header above the import
+  block. If the import that sorts first had a comment (`attach_comments`) or an
+  annotation attached, the next run read it as the file's own header and moved
+  it above the block. So a sorted file changed again, and
+  `--exit-if-changed` failed right after `dart run tidy_imports`. These lines
+  are now written where the next run reads them: above the block, with a blank
+  line under them. An `// ignore:` directly above the import stays with it
+  (#41)
+
 ## 2.7.2 (2026-11-26)
 
 No code changes: this release brings the README and docs on `main` to pub.dev.
