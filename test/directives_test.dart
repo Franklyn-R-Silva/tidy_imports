@@ -2171,13 +2171,17 @@ void main() {}
       List<String> lines, {
       bool attachComments = false,
       bool sortExports = false,
+      bool noComments = false,
+      bool flat = false,
     }) {
-      final first = sortImports(lines, 'demo', false, false, false,
-          attachComments: attachComments, sortExports: sortExports);
+      ImportSortData sort(List<String> lines) =>
+          sortImports(lines, 'demo', false, false, noComments,
+              attachComments: attachComments,
+              sortExports: sortExports,
+              flat: flat);
+      final first = sort(lines);
       // Split the way the CLI does: no empty element after the final newline.
-      final second = sortImports(const LineSplitter().convert(first.sortedFile),
-          'demo', false, false, false,
-          attachComments: attachComments, sortExports: sortExports);
+      final second = sort(const LineSplitter().convert(first.sortedFile));
       expect(second.updated, isFalse,
           reason: 'a second run has to find nothing to do');
       expect(second.sortedFile, first.sortedFile);
@@ -2256,6 +2260,37 @@ void main() {}
 
       expect(result.sortedFile, startsWith("@TestOn('vm')\n"));
     });
+
+    // With no header above the block, the next run read what was attached to
+    // the first import as the file's own header, moved it, and
+    // --exit-if-changed failed right after a sort.
+    for (final flat in [false, true]) {
+      test(
+          'what sorts to the top of a headerless block settles '
+          '(${flat ? '--flat' : '--no-comments'})', () {
+        final result = twice(
+          [
+            "import 'package:http/http.dart';",
+            '// why io',
+            "@Deprecated('x')",
+            '// ignore: unused_import',
+            "import 'dart:io';",
+            '',
+            'void main() {}',
+          ],
+          attachComments: true,
+          noComments: !flat,
+          flat: flat,
+        );
+
+        expect(
+          result.sortedFile,
+          startsWith("// why io\n@Deprecated('x')\n\n"
+              "// ignore: unused_import\nimport 'dart:io';\n"),
+          reason: 'the // ignore: still has to sit right above its import',
+        );
+      });
+    }
 
     test('a line of spaces below a barrel is not code', () {
       final result = twice(

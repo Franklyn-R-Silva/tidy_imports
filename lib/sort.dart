@@ -347,13 +347,30 @@ ImportSortData sortImports(
     if (!noBlankLines && hasPrevious) sortedLines.add('');
   }
 
-  void emit(List<_Directive> directives) {
-    for (final directive in directives) {
-      sortedLines
-        ..addAll(directive.leading)
-        ..addAll(directive.lines);
+  // Headerless, the first directive's attached lines read as the file header
+  // next run; write them there now (but `// ignore:`) so the sort settles.
+  var bare = noComments || flat;
+  void put(_Directive directive) {
+    var leading = directive.leading;
+    if (bare) {
+      bare = false;
+      var cut = leading.length;
+      while (cut > 0 && _isIgnorePragma(leading[cut - 1])) {
+        cut--;
+      }
+      if (cut > 0) {
+        sortedLines
+          ..addAll(leading.take(cut))
+          ..add('');
+        leading = leading.sublist(cut);
+      }
     }
+    sortedLines
+      ..addAll(leading)
+      ..addAll(directive.lines);
   }
+
+  void emit(List<_Directive> directives) => directives.forEach(put);
 
   void emitGroup(List<_Directive> directives, String comment) {
     if (directives.isEmpty) return;
@@ -399,9 +416,7 @@ ImportSortData sortImports(
       for (final directive in [...packageForm, ...relative]) {
         final key = _folderKey(directive.uri, groupProjectByFolderDepth);
         if (previousKey != null && key != previousKey) sortedLines.add('');
-        sortedLines
-          ..addAll(directive.leading)
-          ..addAll(directive.lines);
+        put(directive);
         previousKey = key;
       }
     } else {
@@ -447,9 +462,7 @@ ImportSortData sortImports(
       if (previous != null && section != previous && !noBlankLines) {
         sortedLines.add('');
       }
-      sortedLines
-        ..addAll(directive.leading)
-        ..addAll(directive.lines);
+      put(directive);
       previous = section;
     }
   }
