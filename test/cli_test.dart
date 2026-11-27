@@ -808,6 +808,22 @@ tidy_imports:
       expect(result.stderr, contains('--exit-if-changed'));
     });
 
+    test('a blank-line fight follows the language version, not the SDK', () {
+      // `dart format` at language 3.0 keeps imports tight, so blank_lines off
+      // is no fight there, whatever SDK runs it (#43).
+      lints(['avoid_print']);
+      void pubspec(String sdk) =>
+          File('${temp.path}/pubspec.yaml').writeAsStringSync('name: demo\n'
+              'environment:\n  sdk: $sdk\ntidy_imports:\n  blank_lines: false\n');
+
+      pubspec('^3.0.0');
+      final old = run(['--doctor', '--exit-if-changed']);
+      expect(old.exitCode, 0, reason: '${old.stdout}');
+
+      pubspec("'>=3.13.0 <4.0.0'");
+      expect(run(['--doctor', '--exit-if-changed']).exitCode, 1);
+    });
+
     test('--exit-if-changed passes on a suggestion alone', () {
       lints(['always_use_package_imports']);
 
