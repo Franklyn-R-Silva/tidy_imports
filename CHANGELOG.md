@@ -12,6 +12,14 @@ Fixes only.
   are now written where the next run reads them: above the block, with a blank
   line under them. An `// ignore:` directly above the import stays with it
   (#41)
+* `--doctor` decided whether `dart format` writes a blank line between import
+  sections from the SDK it ran on. `dart format` decides it from the package's
+  language version, the lower bound of `environment: sdk:`. So on Dart 3.13+,
+  every package below language 3.13 got a "fight" that did not exist:
+  `--doctor --exit-if-changed` failed CI and `--apply` wrote keys nobody
+  needed. The doctor now reads `environment: sdk:` (#43)
+* `--doctor` showed an `analysis_options.yaml` found in a parent folder as a
+  path with its leading `/` cut off. It shows the full path now
 
 ## 2.7.2 (2026-11-26)
 

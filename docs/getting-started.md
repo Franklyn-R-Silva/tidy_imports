@@ -116,7 +116,8 @@ Everything else is **off** until you turn it on, by flag or by config key.
 ### Why that third one is on
 
 Since Dart 3.13, `dart format` puts a blank line between the `package:` and
-relative import sections by itself. With this off, `tidy_imports` removes the
+relative import sections by itself, in packages whose `environment: sdk:`
+starts at 3.13 or later. With this off, `tidy_imports` removes the
 line and `dart format` puts it back, forever — every run of either tool
 produces a diff (issue #1). Turning it on by default is a bug fix wearing the
 clothes of a preference. [`--doctor`](lint-agreement.md#--doctor) says so when

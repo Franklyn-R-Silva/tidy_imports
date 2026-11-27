@@ -114,7 +114,7 @@ Under `--flat` Flutter stops being special and the headers go away — a comment
 between two runs the lint reads as one section would be a lie about the
 structure. A blank line is written wherever the section changes, which is
 exactly where `dart format` 3.13+ writes one. The lint reads order, not
-spacing, so `--no-blank-lines` would satisfy it — but on 3.13+ the formatter
+spacing, so `--no-blank-lines` would satisfy it — but at language 3.13+ the formatter
 puts those blank lines straight back, and the two tools rewrite each other on
 every run. `--doctor` reports that as a fight.
 
@@ -172,6 +172,12 @@ formatter inserts a blank line between the `package:` and relative import
 sections. `tidy_imports` keeps both forms of your own imports in one **Project
 imports** group, so the two tools used to undo each other on every run.
 
+The formatter goes by your package's **language version**, the lower bound of
+`environment: sdk:`. The SDK you run it with does not decide it. A package on
+`sdk: ^3.0.0` keeps its imports tight even under Dart 3.13. `--doctor` reads
+the version the same way (since 2.7.3; before, it looked at the SDK and
+reported fights that did not exist).
+
 **`separate_relative_imports` is on by default since 2.0.0**: the blank line is
 written up front, both tools agree, and the file stops flip-flopping.
 
@@ -185,4 +191,5 @@ import 'another_file.dart';
 It is a no-op under `--no-blank-lines`, never doubles up with
 `--group-by-folder`, and applies to the test-double group too. Turn it off with
 `--no-separate-relative-imports` only if you do not run `dart format` — and
-`--doctor` will say so if you have it off on an SDK that separates.
+`--doctor` will say so if you have it off at a language version that
+separates.
